@@ -29,7 +29,15 @@ A arquitetura deixa a porta aberta: a API (`POST /api/analyze`) pode ser usada d
 
 Cada item recebe status (bom / atenção / corrigir), **impacto** e **esforço**. O plano de ação ordena tudo por *impacto ÷ esforço* em três blocos: **Faça agora**, **Próximos passos** e **Melhorias contínuas**.
 
-Na comparação com concorrentes o relatório mostra ranking, gráfico de notas por área, tabela de métricas lado a lado (com ★ no melhor), **onde você perde**, **o que os concorrentes fazem e você não** e **onde você está à frente**, além das capturas de tela da primeira dobra no celular.
+### Imagem do erro
+
+Para os problemas visuais o relatório mostra um **recorte da página com o elemento destacado em vermelho**: texto com pouco contraste, botão principal, formulário, título (H1), imagens quebradas/pesadas/sem alt/maiores que o necessário, elementos que vazam da tela no celular, botões pequenos demais para o dedo e textos minúsculos no celular. Clique na imagem para ampliar.
+
+### Comparação com concorrentes
+
+Cada item da análise detalhada mostra **como cada concorrente se saiu na mesma verificação** (status e valor), com as imagens lado a lado (ex.: seu botão × botão do concorrente). No plano de ação aparece quem já faz bem aquele ponto.
+
+Além disso o relatório mostra ranking, gráfico de notas por área, tabela de métricas lado a lado (com ★ no melhor), **onde você perde**, **o que os concorrentes fazem e você não** e **onde você está à frente**, e uma **comparação visual lado a lado**: primeira tela no desktop e no celular, botão principal, headline, tipografia do texto, formulário e a página inteira no celular.
 
 ## Como rodar
 
@@ -84,6 +92,7 @@ src/utils/                   Cores (contraste/harmonia) e segurança de URLs
 ```
 POST /api/analyze   { "url": "https://site.com", "competitors": ["https://c1.com"] }  → { "id": "..." }
 GET  /api/jobs/:id  → { status: queued|running|done|error, progress, result }
+GET  /api/img/:id/:n → imagens do relatório (capturas e recortes), disponíveis por 6 horas
 GET  /api/health    → { browser: true|false, pagespeed: true|false }
 ```
 

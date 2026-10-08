@@ -97,7 +97,39 @@ export function compareSites(main, competitors) {
     if (mine != null && others.length && mine > Math.max(...others) + 5) advantages.push(`${row.label}: sua nota ${mine} supera todos os concorrentes (melhor deles: ${Math.max(...others)}).`);
   }
 
+  // Para cada checagem do seu site: como cada concorrente se saiu na mesma checagem.
+  const byCheck = {};
+  for (const c of main.checks) {
+    byCheck[c.id] = competitors
+      .filter((comp) => !comp.error)
+      .map((comp) => {
+        const other = comp.checks.find((k) => k.id === c.id);
+        return {
+          name: name(comp),
+          status: other?.status ?? null,
+          value: other?.value ?? null,
+          detail: other?.detail ?? null,
+          evidence: other?.evidence?.[0] || null,
+        };
+      });
+  }
+
+  // Galeria visual lado a lado
+  const gallery = [
+    { id: 'desktop', label: 'Primeira tela no desktop', pick: (s) => (s.screenshots?.desktop ? { img: s.screenshots.desktop } : null) },
+    { id: 'mobile', label: 'Primeira tela no celular', pick: (s) => (s.screenshots?.mobile ? { img: s.screenshots.mobile } : null) },
+    { id: 'cta', label: 'Botão principal', pick: (s) => s.highlights?.cta },
+    { id: 'h1', label: 'Título principal (headline)', pick: (s) => s.highlights?.h1 },
+    { id: 'bodyText', label: 'Tipografia do texto', pick: (s) => s.highlights?.bodyText },
+    { id: 'form', label: 'Formulário', pick: (s) => s.highlights?.form },
+    { id: 'mobileFull', label: 'Página inteira no celular', pick: (s) => s.screenshots?.mobileFull },
+  ]
+    .map((g) => ({ id: g.id, label: g.label, items: sites.map((s) => g.pick(s) || null) }))
+    .filter((g) => g.items.filter(Boolean).length >= 2);
+
   return {
+    byCheck,
+    gallery,
     sites: sites.map((s, i) => ({ name: name(s), url: s.finalUrl || s.url, isMain: i === 0, overall: s.score.overall, screenshot: s.screenshots?.mobile || null })),
     categoryTable,
     metricTable,

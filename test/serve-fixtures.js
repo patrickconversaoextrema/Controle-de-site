@@ -27,7 +27,7 @@ export function startFixtureServer(port = 0) {
     if (p === '/foto.webp') {
       res.writeHead(200, { 'content-type': 'image/webp', 'cache-control': 'max-age=31536000' });
       // WebP 1×1 válido + preenchimento para simular ~20 KB.
-      return res.end(Buffer.concat([Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64'), Buffer.alloc(20 * 1024)]));
+      return res.end(Buffer.concat([Buffer.from('UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoEAAQAAUAmJaACdLoB+AADsAD+pNf/TSPGkeNI+Yt/84ljqd3aAAAA', 'base64'), Buffer.alloc(20 * 1024)]));
     }
     const file = path.join(dir, path.normalize(p));
     if (!file.startsWith(dir) || !fs.existsSync(file)) { res.writeHead(404); return res.end('not found'); }

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import { isAllowedUrl } from '../utils/url.js';
 import { USER_AGENT } from './http.js';
+import { parseColor, blend, contrastRatio, toHex } from '../utils/color.js';
 
 let chromiumPromise;
 let browserPromise;
@@ -162,22 +163,198 @@ export async function collectWithBrowser(url, profileName = 'desktop') {
 
   let screenshot = null;
   try {
-    const buf = await page.screenshot({ type: 'jpeg', quality: 55, fullPage: false });
-    screenshot = 'data:image/jpeg;base64,' + buf.toString('base64');
+    const buf = await page.screenshot({ type: 'jpeg', quality: 55, fullPage: false, scale: 'css' });
+    screenshot = toDataUri(buf);
   } catch {}
+
+  const reqs = [...requests.values()];
+
+  // Recortes com o elemento de cada problema destacado ("imagem do erro").
+  let evidence = {};
+  if (data) {
+    try {
+      evidence = await captureEvidence(page, pickTargets(profileName, data, reqs), profile.viewport);
+    } catch (err) {
+      console.warn('[browser] falha ao capturar evidências:', err.message.split('\n')[0]);
+    }
+  }
+
+  // Página inteira no celular, para comparação lado a lado com concorrentes.
+  let fullPage = null;
+  if (profileName === 'mobile' && data) {
+    try {
+      fullPage = await captureFullPage(page, profile.viewport);
+    } catch {}
+  }
 
   await context.close().catch(() => {});
 
-  const reqs = [...requests.values()];
   return {
     profile: profileName,
     loadMs,
     navError,
     screenshot,
+    fullPage,
+    evidence,
     consoleErrors,
     requests: reqs,
     ...data,
   };
+}
+
+const toDataUri = (buf) => 'data:image/jpeg;base64,' + buf.toString('base64');
+const MAX_FULLPAGE_HEIGHT = 9000;
+const kbStr = (b) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.round(b / 1024)} KB`);
+const cut = (t, n = 50) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
+
+/**
+ * Decide quais elementos fotografar. Cada alvo: { kind, selector, caption }.
+ * kind é usado depois para ligar a imagem à checagem correspondente.
+ */
+export function pickTargets(profileName, data, requests) {
+  const targets = [];
+  const add = (kind, selector, caption) => targets.push({ kind, selector, caption });
+  const samples = data.textSamples || [];
+  const images = data.images || [];
+  const ctas = data.ctas || [];
+
+  if (profileName === 'desktop') {
+    // Contraste: as combinações ruins com mais texto
+    const white = { r: 255, g: 255, b: 255, a: 1 };
+    const groups = new Map();
+    samples.forEach((s, i) => {
+      if (!s.bg || s.bgImage) return;
+      const bg0 = parseColor(s.bg);
+      const fg0 = parseColor(s.color);
+      if (!bg0 || !fg0) return;
+      const bg = bg0.a < 1 ? blend(bg0, white) : bg0;
+      const fg = fg0.a < 1 ? blend(fg0, bg) : fg0;
+      const ratio = contrastRatio(fg, bg);
+      const large = s.size >= 24 || (s.size >= 18.6 && Number(s.weight) >= 700);
+      if (ratio >= (large ? 3 : 4.5)) return;
+      const key = toHex(fg) + toHex(bg);
+      const g = groups.get(key) || { chars: 0, best: null, ratio, fg: toHex(fg), bg: toHex(bg) };
+      g.chars += s.chars;
+      if (!g.best || s.chars > samples[g.best].chars) g.best = i;
+      groups.set(key, g);
+    });
+    [...groups.values()].sort((a, b) => b.chars - a.chars).slice(0, 2).forEach((g) =>
+      add('contrast', `[data-rx-t="${g.best}"]`, `Texto ${g.fg} sobre ${g.bg} — contraste ${g.ratio.toFixed(1).replace('.', ',')}:1 (mínimo 4,5:1)`),
+    );
+
+    const primary = ctas.findIndex((c) => c.aboveFold && c.matchesKeyword);
+    const ctaIdx = primary >= 0 ? primary : ctas.findIndex((c) => c.matchesKeyword) >= 0 ? ctas.findIndex((c) => c.matchesKeyword) : ctas.length ? 0 : -1;
+    if (ctaIdx >= 0) add('cta', `[data-rx-cta="${ctaIdx}"]`, `Botão principal: “${cut(ctas[ctaIdx].text)}”`);
+
+    if (data.hasH1) add('h1', 'h1', 'Título principal (H1)');
+
+    let body = -1;
+    samples.forEach((s, i) => {
+      if (!s.heading && s.chars >= 80 && (body < 0 || s.chars > samples[body].chars)) body = i;
+    });
+    if (body >= 0) add('bodyText', `[data-rx-t="${body}"]`, `Texto corrido em ${samples[body].family.split(',')[0].replace(/["']/g, '')}, ${Math.round(samples[body].size)}px`);
+
+    if (data.formFields) add('form', '[data-rx-form]', `Formulário com ${data.formFields} campo(s)`);
+
+    const bytesBySrc = new Map(requests.filter((r) => r.type === 'Image').map((r) => [r.url, r.bytes]));
+    const visible = images.map((img, i) => ({ ...img, i })).filter((img) => img.visible && img.width >= 8 && img.height >= 8);
+    images.forEach((img, i) => {
+      if (img.broken && img.width >= 8 && img.height >= 8 && targets.filter((t) => t.kind === 'brokenImage').length < 2) {
+        add('brokenImage', `[data-rx-img="${i}"]`, `Imagem quebrada: ${cut(img.src.split('/').pop() || img.src, 60)}`);
+      }
+    });
+    visible
+      .map((img) => ({ ...img, bytes: bytesBySrc.get(img.src) || 0 }))
+      .filter((img) => img.bytes > 200 * 1024)
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, 2)
+      .forEach((img) => add('heavyImage', `[data-rx-img="${img.i}"]`, `Imagem de ${kbStr(img.bytes)} — ${cut(img.src.split('/').pop().split('?')[0], 50)}`));
+    visible
+      .filter((img) => img.naturalWidth > img.width * 1.8 && img.naturalWidth > 600)
+      .slice(0, 2)
+      .forEach((img) => add('oversizedImage', `[data-rx-img="${img.i}"]`, `Arquivo com ${img.naturalWidth}px exibido em ${img.width}px`));
+    visible
+      .filter((img) => img.alt == null && img.width >= 100)
+      .slice(0, 2)
+      .forEach((img) => add('noAlt', `[data-rx-img="${img.i}"]`, 'Imagem sem texto alternativo (alt)'));
+  } else {
+    (data.overflowCount ? [...Array(Math.min(2, data.overflowCount)).keys()] : []).forEach((i) =>
+      add('overflow', `[data-rx-of="${i}"]`, 'Elemento mais largo que a tela do celular'),
+    );
+    (data.smallTargets || []).slice(0, 2).forEach((label, i) => add('smallTarget', `[data-rx-tap="${i}"]`, `Alvo de toque pequeno: “${cut(label, 40)}”`));
+    const tiny = samples.map((s, i) => ({ ...s, i })).filter((s) => s.size < 12 && s.chars > 15).slice(0, 2);
+    tiny.forEach((s) => add('tinyText', `[data-rx-t="${s.i}"]`, `Texto com ${Math.round(s.size)}px no celular`));
+    const mPrimary = ctas.findIndex((c) => c.matchesKeyword);
+    if (mPrimary >= 0) add('ctaMobile', `[data-rx-cta="${mPrimary}"]`, `Botão no celular: “${cut(ctas[mPrimary].text)}”`);
+  }
+  return targets;
+}
+
+async function captureEvidence(page, targets, viewport) {
+  const out = {};
+  const MAX_W = 1366;
+  const MAX_H = 520;
+  const PAD = 20;
+  const MIN_H = 150;
+  const MIN_W = 360;
+  for (const t of targets) {
+    try {
+      const loc = page.locator(t.selector).first();
+      if (!(await loc.count())) continue;
+      await loc.evaluate((el) => {
+        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        el.setAttribute('data-rx-prev-outline', el.style.outline + '|' + el.style.outlineOffset);
+        el.style.outline = '3px solid #e5383b';
+        el.style.outlineOffset = '3px';
+      });
+      await page.waitForTimeout(150);
+      const box = await loc.boundingBox();
+      if (box && box.width >= 2 && box.height >= 2) {
+        // Garante um mínimo de contexto ao redor de elementos muito finos.
+        const wantH = Math.min(Math.max(box.height + PAD * 2, MIN_H), MAX_H);
+        const wantW = Math.min(Math.max(box.width + PAD * 2, MIN_W), MAX_W, viewport.width);
+        // Elementos largos: alinha pela esquerda para não cortar o início do texto.
+        const x = box.width + PAD * 2 >= wantW ? Math.max(0, box.x - PAD) : Math.max(0, Math.min(box.x + box.width / 2 - wantW / 2, viewport.width - wantW));
+        const y = Math.max(0, Math.min(box.y + box.height / 2 - wantH / 2, viewport.height - wantH));
+        const width = Math.min(viewport.width - x, wantW);
+        const height = Math.min(viewport.height - y, wantH);
+        if (width > 10 && height > 10) {
+          const buf = await page.screenshot({ type: 'jpeg', quality: 62, clip: { x, y, width, height }, scale: 'css' });
+          (out[t.kind] ??= []).push({ img: toDataUri(buf), caption: t.caption });
+        }
+      }
+      await loc.evaluate((el) => {
+        const [o, off] = (el.getAttribute('data-rx-prev-outline') || '|').split('|');
+        el.style.outline = o;
+        el.style.outlineOffset = off;
+      });
+    } catch {
+      // Elemento sumiu ou mudou (carrossel, pop-up): segue para o próximo.
+    }
+  }
+  return out;
+}
+
+async function captureFullPage(page, viewport) {
+  // Rola a página para disparar imagens com lazy loading.
+  await page.evaluate(async (max) => {
+    const step = window.innerHeight * 0.9;
+    for (let y = 0; y < Math.min(document.documentElement.scrollHeight, max); y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    window.scrollTo(0, 0);
+  }, MAX_FULLPAGE_HEIGHT);
+  await page.waitForTimeout(300);
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  const buf = await page.screenshot({
+    type: 'jpeg',
+    quality: 45,
+    fullPage: true,
+    scale: 'css',
+    clip: { x: 0, y: 0, width: viewport.width, height: Math.min(height, MAX_FULLPAGE_HEIGHT) },
+  });
+  return { img: toDataUri(buf), truncated: height > MAX_FULLPAGE_HEIGHT };
 }
 
 // Executado dentro da página. Precisa ser autocontido.
@@ -222,6 +399,7 @@ function extractInPage() {
     if (!isVisible(el, rect)) continue;
     const cs = getComputedStyle(el);
     const bg = effectiveBg(el);
+    el.setAttribute('data-rx-t', String(textSamples.length));
     textSamples.push({
       tag: el.tagName.toLowerCase(),
       heading: /^H[1-6]$/.test(el.tagName) || !!el.closest('h1,h2,h3,h4,h5,h6'),
@@ -252,7 +430,8 @@ function extractInPage() {
   const rootBg = getComputedStyle(document.body || document.documentElement).backgroundColor;
 
   // Imagens
-  const images = [...document.images].slice(0, 300).map((img) => {
+  const images = [...document.images].slice(0, 300).map((img, i) => {
+    img.setAttribute('data-rx-img', String(i));
     const r = img.getBoundingClientRect();
     return {
       src: img.currentSrc || img.src,
@@ -278,7 +457,10 @@ function extractInPage() {
     if (!isVisible(el, r)) continue;
     const label = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ');
     if (r.width < 40 || r.height < 40) {
-      if (r.width < 24 || r.height < 24) smallTargets.push(label.slice(0, 40) || el.tagName.toLowerCase());
+      if (r.width < 24 || r.height < 24) {
+        el.setAttribute('data-rx-tap', String(smallTargets.length));
+        smallTargets.push(label.slice(0, 40) || el.tagName.toLowerCase());
+      }
     }
     const cs = getComputedStyle(el);
     const bg = cs.backgroundColor;
@@ -287,6 +469,7 @@ function extractInPage() {
     const href = el.getAttribute('href') || '';
     if ((isButtonLike && label.length > 1 && label.length < 60) || /wa\.me|whatsapp|tel:/i.test(href)) {
       if (ctaRe.test(label) || /wa\.me|whatsapp|tel:/i.test(href) || isButtonLike) {
+        el.setAttribute('data-rx-cta', String(ctas.length));
         ctas.push({
           text: label.slice(0, 60),
           href: href.slice(0, 200),
@@ -301,6 +484,35 @@ function extractInPage() {
       }
     }
   }
+
+  // Elementos que "vazam" para a direita (causa da rolagem lateral no celular)
+  let overflowCount = 0;
+  if (document.documentElement.scrollWidth > vw + 2) {
+    const culprits = [];
+    for (const el of document.querySelectorAll('body *')) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.right <= vw + 2) continue;
+      const pr = el.parentElement?.getBoundingClientRect();
+      if (pr && pr.right > vw + 2 && el.parentElement !== document.body) continue;
+      culprits.push({ el, over: r.right - vw });
+    }
+    culprits.sort((a, b) => b.over - a.over).slice(0, 3).forEach((c, i) => c.el.setAttribute('data-rx-of', String(i)));
+    overflowCount = Math.min(3, culprits.length);
+  }
+
+  // Maior formulário
+  let formFields = 0;
+  for (const f of document.querySelectorAll('form')) {
+    const n = f.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), textarea, select').length;
+    const r = f.getBoundingClientRect();
+    if (n > formFields && r.width > 0 && r.height > 0) {
+      document.querySelector('[data-rx-form]')?.removeAttribute('data-rx-form');
+      f.setAttribute('data-rx-form', '1');
+      formFields = n;
+    }
+  }
+  const h1 = document.querySelector('h1');
+  const hasH1 = !!(h1 && h1.getBoundingClientRect().height > 0);
 
   const fontsLoaded = [];
   try {
@@ -329,6 +541,9 @@ function extractInPage() {
     images,
     ctas: ctas.slice(0, 60),
     smallTargets: smallTargets.slice(0, 40),
+    overflowCount,
+    formFields,
+    hasH1,
     fontsLoaded: fontsLoaded.slice(0, 60),
   };
 }

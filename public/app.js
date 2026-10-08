@@ -12,6 +12,54 @@ const level = (s) => (s == null ? 'none' : s >= 70 ? 'good' : s >= 50 ? 'warning
 const levelLabel = (s) => (s == null ? 'Sem dados' : s >= 85 ? 'Excelente' : s >= 70 ? 'Bom' : s >= 50 ? 'Regular' : 'Crítico');
 const levelIcon = (s) => (s == null ? '–' : s >= 70 ? '✓' : s >= 50 ? '!' : '✕');
 
+// Recortes de tela com o elemento destacado
+function evidenceHtml(list, max = 4) {
+  if (!list?.length) return '';
+  return `<div class="ev-grid">${list
+    .slice(0, max)
+    .map((e) => `<figure class="ev"><button class="ev-open" data-full="${esc(e.img)}" data-caption="${esc(e.caption || '')}" aria-label="Ampliar imagem"><img src="${esc(e.img)}" alt="${esc(e.caption || 'Recorte da página')}" loading="lazy"></button>${e.caption ? `<figcaption>${esc(e.caption)}</figcaption>` : ''}</figure>`)
+    .join('')}</div>`;
+}
+
+// Como os concorrentes se saíram na mesma checagem
+function competitorRows(id, mine) {
+  const rows = COMPARE?.byCheck?.[id];
+  if (!rows?.length) return '';
+  const better = rows.filter((r) => rank(r.status) > rank(mine.status));
+  const sideBySide = mine.evidence?.length
+    ? [{ ...mine.evidence[0], caption: `Você — ${mine.evidence[0].caption || ''}` }, ...rows.filter((r) => r.evidence).slice(0, 3).map((r) => ({ ...r.evidence, caption: `${r.name} — ${r.evidence.caption || ''}` }))]
+    : [];
+  return `<div class="vs">
+    <div class="vs-title">Concorrentes nesta verificação${better.length ? ` <span class="vs-alert">${better.length} melhor(es) que você</span>` : ''}</div>
+    <div class="vs-rows">
+      <div class="vs-row me"><span class="vs-name">Você</span><span class="st st-${mine.status}">${STATUS_LABEL[mine.status]}</span><span class="vs-val">${esc(mine.value ?? '')}</span></div>
+      ${rows.map((r) => `<div class="vs-row"><span class="vs-name">${esc(r.name)}</span>${r.status ? `<span class="st st-${r.status}">${STATUS_LABEL[r.status]}</span>` : '<span class="st st-info">sem dados</span>'}<span class="vs-val">${esc(r.value ?? '')}</span></div>`).join('')}
+    </div>
+    ${sideBySide.length > 1 ? `<div class="vs-sub">Você × concorrentes</div>${evidenceHtml(sideBySide, 4)}` : ''}
+  </div>`;
+}
+const rank = (s) => ({ fail: 0, warn: 1, info: 1, ok: 2 }[s] ?? -1);
+let COMPARE = null;
+
+function openLightbox(src, caption) {
+  let dlg = document.getElementById('lightbox');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'lightbox';
+    dlg.innerHTML = '<form method="dialog"><button class="lb-close" aria-label="Fechar">✕</button></form><img alt=""><p></p>';
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    document.body.appendChild(dlg);
+  }
+  dlg.querySelector('img').src = src;
+  dlg.querySelector('img').alt = caption;
+  dlg.querySelector('p').textContent = caption;
+  dlg.showModal();
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.ev-open');
+  if (b) openLightbox(b.dataset.full, b.dataset.caption);
+});
+
 // ---------- Fluxo ----------
 const form = $('#form');
 form.addEventListener('submit', async (e) => {
@@ -87,6 +135,7 @@ function fail(msg) {
 function renderReport(data) {
   const { main, comparison, categories } = data;
   CATS = categories;
+  COMPARE = comparison;
   $('#progress').hidden = true;
   const el = $('#report');
   el.hidden = false;
@@ -191,7 +240,6 @@ function comparisonSection(cmp, competitors, categories) {
     : '<li>Seus concorrentes não fazem nada de importante que você não faça.</li>';
   const adv = cmp.advantages.length ? `<h3 style="margin-top:20px">Onde você está à frente</h3><ul class="insight-list">${cmp.advantages.map((a) => `<li>✓ ${esc(a)}</li>`).join('')}</ul>` : '';
 
-  const shots = cmp.sites.filter((s) => s.screenshot).map((s) => `<figure><img src="${s.screenshot}" alt="Primeira tela de ${esc(s.name)} no celular" loading="lazy"><figcaption>${esc(s.name)}${s.isMain ? ' (você)' : ''}</figcaption></figure>`).join('');
 
   return `<section class="card" id="comparacao">
     <div class="section-title"><h2>Comparação com concorrentes</h2></div>
@@ -209,8 +257,29 @@ function comparisonSection(cmp, competitors, categories) {
     <h3 style="margin-top:24px">Números lado a lado</h3>
     <div class="table-wrap"><table class="cmp"><thead>${head}</thead><tbody>${metricRows}</tbody></table></div>
     <p class="muted small">★ = melhor resultado entre os sites analisados.</p>
-    ${shots ? `<h3 style="margin-top:20px">Primeira tela no celular</h3><div class="comp-shots">${shots}</div>` : ''}
+    ${galleryHtml(cmp)}
   </section>`;
+}
+
+function galleryHtml(cmp) {
+  if (!cmp.gallery?.length) return '';
+  const tabs = cmp.gallery.map((g, i) => `<button class="tab" role="tab" aria-selected="${i === 0}" data-gtab="${g.id}">${esc(g.label)}</button>`).join('');
+  const panels = cmp.gallery
+    .map((g, i) => `<div class="gallery-panel" data-gpanel="${g.id}" ${i === 0 ? '' : 'hidden'}>
+      <h4 class="print-only">${esc(g.label)}</h4>
+      <div class="gallery ${g.id === 'mobileFull' ? 'gallery-full' : ''} ${g.id === 'mobile' ? 'gallery-narrow' : ''}" style="--cols:${cmp.sites.length}">
+        ${g.items
+          .map((it, si) => `<figure class="${cmp.sites[si].isMain ? 'me' : ''}">
+            <figcaption><i style="background:${SERIES[si]}"></i>${esc(cmp.sites[si].name)}${cmp.sites[si].isMain ? ' (você)' : ''}</figcaption>
+            ${it ? `<div class="gallery-img"><button class="ev-open" data-full="${esc(it.img)}" data-caption="${esc(cmp.sites[si].name + ' — ' + g.label)}"><img src="${esc(it.img)}" alt="${esc(g.label)} de ${esc(cmp.sites[si].name)}" loading="lazy"></button></div>${it.caption ? `<p class="small muted">${esc(it.caption)}</p>` : ''}${it.truncated ? '<p class="small muted">(página cortada no limite de altura)</p>' : ''}` : '<div class="gallery-empty">Não encontrado</div>'}
+          </figure>`)
+          .join('')}
+      </div>
+    </div>`)
+    .join('');
+  return `<h3 style="margin-top:28px">Comparação visual lado a lado</h3>
+    <p class="muted small" style="margin-top:-4px">Clique em uma imagem para ampliar.</p>
+    <div class="tabs" role="tablist">${tabs}</div>${panels}`;
 }
 
 function planSection(r) {
@@ -223,6 +292,8 @@ function planSection(r) {
               <h4>${esc(i.title)}</h4>
               <p>${esc(i.problem)}</p>
               <p class="how"><b>O que fazer:</b> ${esc(i.fix)}</p>
+              ${evidenceHtml(r.checks.find((c) => c.id === i.id)?.evidence, 2)}
+              ${planCompetitors(i.id)}
               <div class="tags"><span class="st st-${i.status}">${STATUS_LABEL[i.status]}</span><span class="pill">${IMPACT_LABEL[i.impact]}</span><span class="pill">${EFFORT_LABEL[i.effort]}</span><span class="pill">${esc(catLabel(i.category))}</span></div>
             </div>`,
           )
@@ -237,6 +308,12 @@ function planSection(r) {
       ${p.total === 0 ? '<p>Nenhuma melhoria pendente. Excelente trabalho!</p>' : ''}
     </div>
   </section>`;
+}
+
+function planCompetitors(id) {
+  const rows = COMPARE?.byCheck?.[id]?.filter((r) => r.status === 'ok');
+  if (!rows?.length) return '';
+  return `<p class="vs-note">🏁 Já fazem bem: ${rows.map((r) => `<b>${esc(r.name)}</b>${r.value != null && r.value !== '' ? ` (${esc(r.value)})` : ''}`).join(', ')}</p>`;
 }
 
 let CATS = [];
@@ -278,7 +355,9 @@ function detailSection(r, categories) {
                 <h4><span>${esc(k.title)}</span>${k.value != null && k.value !== '' ? `<span class="val">${esc(k.value)}</span>` : ''}</h4>
                 ${k.detail ? `<p>${esc(k.detail)}</p>` : ''}
                 ${k.fix && k.status !== 'ok' ? `<p class="fix"><b>Como melhorar:</b> ${esc(k.fix)}</p>` : ''}
+                ${evidenceHtml(k.evidence)}
                 ${k.items?.length ? `<details><summary>Ver itens (${k.items.length})</summary><ul>${k.items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+                ${competitorRows(k.id, k)}
               </div>
             </div>`,
           )
@@ -299,10 +378,16 @@ function wire(root, main, cmp, categories) {
     }),
   );
   const selectTab = (id) => {
-    root.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === id)));
+    root.querySelectorAll('.tab[data-tab]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === id)));
     root.querySelectorAll('.tab-panel').forEach((p) => (p.hidden = p.dataset.panel !== id));
   };
-  root.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
+  root.querySelectorAll('.tab[data-tab]').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
+  root.querySelectorAll('.tab[data-gtab]').forEach((t) =>
+    t.addEventListener('click', () => {
+      root.querySelectorAll('.tab[data-gtab]').forEach((x) => x.setAttribute('aria-selected', String(x === t)));
+      root.querySelectorAll('.gallery-panel').forEach((p) => (p.hidden = p.dataset.gpanel !== t.dataset.gtab));
+    }),
+  );
   root.querySelectorAll('[data-goto]').forEach((b) =>
     b.addEventListener('click', () => {
       selectTab(b.dataset.goto);

@@ -40,6 +40,20 @@ test('página boa pontua mais que a ruim e a comparação aponta as diferenças'
   assert.ok(main.actionPlan.now.length > 0);
   assert.ok(comparison.theyDo.some((t) => t.id === 'conversao.social-proof'));
   assert.equal(comparison.ranking[0].isMain, false);
+
+  // Cada checagem traz o resultado dos concorrentes na mesma verificação.
+  const sp = comparison.byCheck['conversao.social-proof'];
+  assert.equal(sp.length, 1);
+  assert.equal(sp[0].status, 'ok');
+
+  if (process.env.TEST_BROWSER === '1') {
+    const contrast = main.checks.find((c) => c.id === 'cores.contrast');
+    assert.ok(contrast.evidence?.length, 'contraste deve ter imagem do erro');
+    assert.match(contrast.evidence[0].img, /^data:image\/jpeg;base64,/);
+    assert.ok(good.checks.find((c) => c.id === 'conversao.form-fields').evidence?.length);
+    assert.ok(main.screenshots.mobileFull?.img);
+    assert.ok(comparison.gallery.some((g) => g.id === 'cta'));
+  }
 });
 
 test('concorrente com erro não derruba a análise', async () => {
