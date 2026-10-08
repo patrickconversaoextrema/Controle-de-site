@@ -502,29 +502,37 @@ function renderReport(data) {
   const hist = data.history || [];
   const idx = hist.findIndex((h) => h.id === data.id);
   const previous = idx > 0 ? hist[idx - 1] : null;
+  const competitorsCount = comparison ? comparison.sites.length - 1 : 0;
+
+  const sections = [
+    { id: 'geral', label: 'Visão geral', icon: 'squares-four', html: overviewSection(main, categories, previous, comparison, data.discovery) },
+    { id: 'plano', label: 'Plano de ação', icon: 'list-checks', count: main.actionPlan.total, html: planSection(main) },
+    comparison || data.discovery
+      ? { id: 'concorrentes', label: 'Concorrentes', icon: 'flag-checkered', count: competitorsCount || null, html: comparison ? comparisonSection(comparison, data.competitors, data.discovery) : discoveryOnlySection(data.discovery) }
+      : null,
+    { id: 'detalhes', label: 'Análise detalhada', icon: 'magnifying-glass', count: main.checks.filter((c) => c.status === 'fail' || c.status === 'warn').length, html: detailSection(main, categories) },
+    { id: 'identidade', label: 'Identidade visual', icon: 'palette', html: identitySection(main) },
+    hist.length > 1 ? { id: 'evolucao', label: 'Evolução', icon: 'chart-line-up', count: hist.length, html: evolutionSection(hist, data.id) } : null,
+  ].filter(Boolean);
 
   const el = $('#report');
-  el.innerHTML = [
-    headSection(main, data, previous),
-    categorySection(main, categories, previous),
-    hist.length > 1 ? evolutionSection(hist, data.id) : '',
-    comparison ? comparisonSection(comparison, data.competitors, data.discovery) : discoveryOnlySection(data.discovery),
-    planSection(main),
-    identitySection(main),
-    detailSection(main, categories),
-  ].join('');
+  el.innerHTML = `${headSection(main, data, previous)}
+    <nav class="rtabs no-print" role="tablist" aria-label="Seções do relatório">
+      ${sections.map((s, i) => `<button class="rtab" role="tab" data-tg="main" data-tk="${s.id}" aria-selected="${i === 0}"><i class="ph ph-${s.icon}"></i>${s.label}${s.count ? `<span class="rtab-count">${s.count}</span>` : ''}</button>`).join('')}
+    </nav>
+    ${sections.map((s, i) => `<div class="rtab-panel" role="tabpanel" data-tgp="main" data-tk="${s.id}" ${i === 0 ? '' : 'hidden'}><h2 class="print-only">${s.label}</h2>${s.html}</div>`).join('')}`;
   wire(el, comparison, hist, data);
   loadFontPreviews(main);
   window.scrollTo({ top: 0 });
 }
 
-function gauge(score) {
-  const r = 54;
+function gauge(score, size = 104) {
+  const r = size / 2 - 8;
   const c = 2 * Math.PI * r;
   const v = score ?? 0;
-  return `<div class="gauge lvl-${level(score)}" role="img" aria-label="Nota geral ${v} de 100">
-    <svg width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="${r}" fill="none" stroke="rgb(var(--c-hairline))" stroke-width="10"/>
-    <circle cx="64" cy="64" r="${r}" fill="none" stroke="var(--lvl)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(c * v) / 100} ${c}"/></svg>
+  return `<div class="gauge lvl-${level(score)}" style="width:${size}px;height:${size}px" role="img" aria-label="Nota geral ${v} de 100">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="rgb(var(--c-hairline))" stroke-width="9"/>
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--lvl)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(c * v) / 100} ${c}"/></svg>
     <div class="gauge-value"><div><b>${score ?? '–'}</b><span>de 100</span></div></div></div>`;
 }
 
@@ -537,59 +545,57 @@ function shareBoxHtml(shareUrl) {
     <button class="btn btn-sm btn-danger-ghost" data-action="revoke-share">Desativar link</button></div>`;
 }
 
+// Cabeçalho compacto: nota, identificação, resumo e ações numa faixa só
 function headSection(r, data, previous) {
   const s = r.summary;
   const notices = [];
-  if (!r.browser) notices.push('A análise com navegador real não estava disponível; métricas de velocidade, fontes e cores ficaram limitadas.');
-  if (!r.pagespeed && !data.public) notices.push('Configure uma chave do Google PageSpeed (PAGESPEED_API_KEY) para incluir a nota oficial do Google e dados de usuários reais.');
+  if (!r.browser) notices.push('A análise com navegador real não estava disponível; velocidade, fontes e cores ficaram limitadas.');
+  if (!r.pagespeed && !data.public) notices.push('Configure a PAGESPEED_API_KEY para incluir a nota oficial do Google.');
   const actions = data.public
     ? `<button class="btn btn-sm btn-secondary" data-action="print"><i class="ph ph-file-pdf"></i>Salvar em PDF</button>`
     : `<button class="btn btn-sm shiny-cta" data-action="share-client"><span class="shiny-dots" aria-hidden="true"></span><span class="shiny-cta-content"><i class="ph ph-share-network"></i>Compartilhar com o cliente</span></button>
-       <button class="btn btn-sm btn-secondary" data-action="print"><i class="ph ph-file-pdf"></i>Salvar em PDF</button>
+       <button class="btn btn-sm btn-secondary" data-action="print"><i class="ph ph-file-pdf"></i>PDF</button>
        <button class="btn btn-sm btn-ghost" data-action="copy-internal"><i class="ph ph-link"></i>Link interno</button>
-       <a class="btn btn-sm btn-ghost" href="/" data-nav="home"><i class="ph ph-plus"></i>Nova análise</a>
-       ${data.canDelete ? `<button class="btn btn-sm btn-danger-ghost" data-delete="${data.id}"><i class="ph ph-trash"></i>Excluir</button>` : ''}`;
+       ${data.canDelete ? `<button class="btn btn-sm btn-danger-ghost btn-icon" data-delete="${data.id}" title="Excluir análise" aria-label="Excluir análise"><i class="ph ph-trash"></i></button>` : ''}`;
   const delta = previous && r.score.overall != null && previous.overall != null ? r.score.overall - previous.overall : null;
-  return `<section class="card">
-    <div class="report-head">
-      <div>
+  return `<section class="card head-card">
+    <div class="head-grid">
+      ${gauge(r.score.overall)}
+      <div class="head-id">
         <span class="eyebrow">Raio-X da página</span>
-        <div class="report-url"><i class="ph ph-globe"></i>${esc(r.finalUrl)}</div>
-        <h1 style="margin:0">${esc(host(r.finalUrl))}</h1>
-        <div class="caption" style="margin-top:4px">Analisado em ${dateBR(data.createdAt, true)}${data.author ? ` por ${esc(data.author)}` : ''}</div>
-        <div class="score-row">
-          ${gauge(r.score.overall)}
-          <div class="score-meta">
-            <div>${levelBadge(r.score.overall)}</div>
-            ${delta != null ? `<div>${deltaHtml(delta)} <span class="delta-base">vs. análise de ${dateBR(previous.createdAt)}</span></div>` : ''}
-            <div class="chips">
-              <span class="badge st-fail">${s.fails} para corrigir</span>
-              <span class="badge st-warn">${s.warns} de atenção</span>
-              <span class="badge st-ok">${r.checks.filter((c) => c.status === 'ok').length} ok</span>
-            </div>
-          </div>
+        <h1>${esc(host(r.finalUrl))}</h1>
+        <div class="report-url"><i class="ph ph-globe"></i><span>${esc(r.finalUrl)}</span></div>
+        <div class="caption">Analisado em ${dateBR(data.createdAt, true)}${data.author ? ` por ${esc(data.author)}` : ''}${data.niche || data.discovery?.query ? ` · nicho: ${esc(data.niche || data.discovery.query)}` : ''}</div>
+        <div class="chips" style="margin-top:8px">
+          ${levelBadge(r.score.overall)}
+          ${delta != null ? `<span class="badge badge-neutral">${deltaHtml(delta)}&nbsp;vs. ${dateBR(previous.createdAt)}</span>` : ''}
+          <span class="badge st-fail">${s.fails} para corrigir</span>
+          <span class="badge st-warn">${s.warns} de atenção</span>
+          <span class="badge st-ok">${r.checks.filter((c) => c.status === 'ok').length} ok</span>
         </div>
-        <ul class="summary-list">${s.text.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
-        <div class="actions">${actions}</div>
-        ${data.public ? '' : `<div id="share-box" class="share-box no-print" ${data.shareUrl ? '' : 'hidden'}>${shareBoxHtml(data.shareUrl)}</div>`}
-        ${notices.map((n) => `<div class="notice no-print"><i class="ph ph-info"></i><span>${esc(n)}</span></div>`).join('')}
       </div>
+      <ul class="summary-list head-summary">${s.text.slice(1).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
       <div class="shots">
-        ${r.screenshots.desktop ? `<figure class="shot shot-desktop"><img src="${esc(r.screenshots.desktop)}" alt="Primeira tela no desktop"><figcaption>Desktop</figcaption></figure>` : ''}
-        ${r.screenshots.mobile ? `<figure class="shot shot-mobile"><img src="${esc(r.screenshots.mobile)}" alt="Primeira tela no celular"><figcaption>Celular</figcaption></figure>` : ''}
+        ${r.screenshots.desktop ? `<figure class="shot shot-desktop"><button class="ev-open" data-full="${esc(r.screenshots.desktop)}" data-caption="Primeira tela no desktop"><img src="${esc(r.screenshots.desktop)}" alt="Primeira tela no desktop"></button></figure>` : ''}
+        ${r.screenshots.mobile ? `<figure class="shot shot-mobile"><button class="ev-open" data-full="${esc(r.screenshots.mobile)}" data-caption="Primeira tela no celular"><img src="${esc(r.screenshots.mobile)}" alt="Primeira tela no celular"></button></figure>` : ''}
       </div>
     </div>
+    <div class="head-foot">
+      <div class="actions">${actions}</div>
+      ${notices.length ? `<details class="notices no-print"><summary class="caption"><i class="ph ph-info"></i>${notices.length} aviso(s) sobre esta análise</summary>${notices.map((n) => `<p class="caption">${esc(n)}</p>`).join('')}</details>` : ''}
+    </div>
+    ${data.public ? '' : `<div id="share-box" class="share-box no-print" ${data.shareUrl ? '' : 'hidden'}>${shareBoxHtml(data.shareUrl)}</div>`}
   </section>`;
 }
 
-function categorySection(r, categories, previous) {
-  const cards = categories
+function categoryCards(r, categories, previous) {
+  return categories
     .filter((c) => r.score.categories[c.id] != null)
     .map((c) => {
       const v = r.score.categories[c.id];
       const prev = previous?.categories?.[c.id];
       const d = prev != null && v !== prev ? v - prev : null;
-      return `<button class="cat-card" data-goto="${c.id}" aria-label="${esc(c.label)}: ${v} de 100">
+      return `<button class="cat-card" data-goto="${c.id}" aria-label="${esc(c.label)}: ${v} de 100. Ver detalhes">
         <span class="cat-name"><i class="ph ph-${CAT_ICON[c.id]}"></i>${esc(c.label)}</span>
         <div class="cat-score"><b>${v}</b>${deltaHtml(d)}</div>
         <div class="meter lvl-${level(v)}"><i style="width:${v}%"></i></div>
@@ -597,10 +603,45 @@ function categorySection(r, categories, previous) {
       </button>`;
     })
     .join('');
+}
+
+// Aba "Visão geral": notas por área, 3 prioridades e posição frente aos concorrentes
+function overviewSection(r, categories, previous, cmp, discovery) {
+  const top = [...r.actionPlan.now, ...r.actionPlan.next].slice(0, 3);
+  const prio = top.length
+    ? `<div class="prio-grid">${top
+        .map((i, n) => `<div class="prio">
+          <div class="prio-head"><span class="prio-n">${n + 1}</span>${statusBadge(i.status)}<span class="badge badge-neutral"><i class="ph ph-${CAT_ICON[i.category]}"></i>${esc(catLabel(i.category))}</span></div>
+          <h4>${esc(i.title)}</h4>
+          <p>${esc(i.fix)}</p>
+        </div>`)
+        .join('')}</div>`
+    : '<p class="mute">Nenhuma melhoria pendente.</p>';
+  let rival = '';
+  if (cmp) {
+    const me = cmp.ranking.find((x) => x.isMain);
+    const best = cmp.ranking[0];
+    rival = `<section class="card">
+      <div class="card-title"><h2>Frente aos concorrentes</h2><button class="btn btn-sm btn-ghost" data-gotab="concorrentes">Ver comparação<i class="ph ph-arrow-right btn-icon-slide"></i></button></div>
+      <div class="rival-row">
+        <div class="rank me"><span class="caption">${me.position}º de ${cmp.ranking.length} na nota</span><br><b>${me.overall ?? '–'}</b><small>você</small></div>
+        ${best.isMain ? '' : `<div class="rank"><span class="caption">Melhor concorrente</span><br><b>${best.overall ?? '–'}</b><small>${esc(best.name)}</small></div>`}
+        ${discovery && !discovery.error ? `<div class="rank"><span class="caption">No Google para “${esc(discovery.query)}”</span><br><b>${discovery.clientPosition ? `${discovery.clientPosition}º` : '—'}</b><small>${serpBadge(discovery)}</small></div>` : ''}
+        ${cmp.insights[0] ? `<div class="rival-insight"><span class="caption">Maior diferença</span><p>${esc(cmp.insights[0].text)}</p></div>` : ''}
+      </div>
+    </section>`;
+  } else if (discovery?.error) {
+    rival = `<div class="error-box"><i class="ph ph-warning"></i>${esc(discovery.error)}</div>`;
+  }
   return `<section class="card">
-    <div class="card-title"><h2>Panorama por área</h2><span class="caption">${previous ? `Variação vs. análise de ${dateBR(previous.createdAt)} · ` : ''}Clique para ver os detalhes</span></div>
-    <div class="cat-grid">${cards}</div>
-  </section>`;
+      <div class="card-title"><h2>Nota por área</h2><span class="caption">${previous ? `Variação vs. ${dateBR(previous.createdAt)} · ` : ''}Clique numa área para ver os detalhes</span></div>
+      <div class="cat-grid">${categoryCards(r, categories, previous)}</div>
+    </section>
+    <section class="card">
+      <div class="card-title"><h2>Comece por aqui</h2><button class="btn btn-sm btn-ghost" data-gotab="plano">Plano completo (${r.actionPlan.total})<i class="ph ph-arrow-right btn-icon-slide"></i></button></div>
+      ${prio}
+    </section>
+    ${rival}`;
 }
 
 function evolutionSection(hist, currentId) {
@@ -629,9 +670,7 @@ function discoveryHtml(d, cmp) {
     if (!(i > 0)) return '';
     return i < 3 ? `<i class="sw" style="background:${SERIES[i]}"></i>` : '<i class="sw swatch-hatch"></i>';
   };
-  const mine = d.clientPosition
-    ? `<b>${d.clientPosition}º</b> lugar no Google`
-    : `não aparece entre os ${d.searchedResults || 20} primeiros resultados`;
+  const mine = d.clientPosition ? `<b>${d.clientPosition}º</b> lugar no Google` : `não aparece entre os ${d.searchedResults || 20} primeiros resultados`;
   const rows = d.competitors
     .map((c) => `<li><div class="serp-pos"><b>${c.position}º</b><span>no Google</span></div>
       <div class="serp-main"><b>${colorOf(c.url)}${esc(host(c.url))}</b><span title="${esc(c.title)}">${esc(c.title)}</span>${c.note ? `<span class="caption">${esc(c.note)}</span>` : ''}</div></li>`)
@@ -660,11 +699,17 @@ function discoveryOnlySection(d) {
   return `<section class="card" id="comparacao"><div class="card-title"><h2>Concorrentes</h2></div>${discoveryHtml(d, null)}</section>`;
 }
 
+/** Subabas horizontais: [{ id, label, count?, html }] */
+function subTabs(group, items, extraClass = '') {
+  const list = items.filter(Boolean);
+  return `<div class="tabs ${extraClass}" role="tablist">${list.map((t, i) => `<button class="tab" role="tab" data-tg="${group}" data-tk="${t.id}" aria-selected="${i === 0}">${t.icon ? `<i class="ph ph-${t.icon}"></i>` : ''}${t.label}${t.count != null ? ` <span class="tab-count">${t.count}</span>` : ''}</button>`).join('')}</div>
+    ${list.map((t, i) => `<div class="sub-panel" role="tabpanel" data-tgp="${group}" data-tk="${t.id}" ${i === 0 ? '' : 'hidden'}><h3 class="print-only">${t.label}</h3>${t.html}</div>`).join('')}`;
+}
+
 function comparisonSection(cmp, competitors, discovery) {
   const failed = competitors.filter((c) => c.error);
   const legend = cmp.sites.map((s, i) => `<span>${SERIES_SWATCH(i)}${esc(s.name)}${s.isMain ? ' (você)' : ''}</span>`).join('');
   const ranking = cmp.ranking.map((r) => `<div class="rank ${r.isMain ? 'me' : ''}"><span class="caption">${r.position}º na nota</span><br><b>${r.overall ?? '–'}</b><small>${esc(r.name)}${r.isMain ? ' · você' : ''}</small></div>`).join('');
-
   const head = `<tr><th>Métrica</th>${cmp.sites.map((s) => `<th class="num">${esc(s.name)}${s.isMain ? ' (você)' : ''}</th>`).join('')}</tr>`;
   const metricRows = cmp.metricTable
     .map((m) => `<tr><td>${esc(m.label)}</td>${m.values.map((v, i) => `<td class="num ${i === m.bestIndex ? 'best' : ''}">${v == null ? '<span class="dash">—</span>' : fmt(v, m.fmt)}${i === m.bestIndex ? ' <i class="ph ph-star" aria-label="melhor"></i>' : ''}</td>`).join('')}</tr>`)
@@ -675,7 +720,6 @@ function comparisonSection(cmp, competitors, discovery) {
       return `<tr><td>${esc(row.label)}</td>${row.values.map((v) => `<td class="num ${v === best ? 'best' : ''}">${v ?? '<span class="dash">—</span>'}</td>`).join('')}</tr>`;
     })
     .join('');
-
   const insights = cmp.insights.length ? cmp.insights.map((i) => `<li>${esc(i.text)}</li>`).join('') : '<li>Nenhuma métrica em que você esteja muito atrás.</li>';
   const theyDo = cmp.theyDo.length
     ? cmp.theyDo.map((t) => `<li><b>${esc(t.title)}</b><span class="caption">Feito por: ${esc(t.competitors.join(', '))}</span><br>${esc(t.fix)}</li>`).join('')
@@ -683,30 +727,33 @@ function comparisonSection(cmp, competitors, discovery) {
   const adv = cmp.advantages.length ? `<h3 class="sub-title">Onde você está à frente</h3><ul class="insight-list">${cmp.advantages.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
 
   return `<section class="card" id="comparacao">
-    <div class="card-title"><h2>Comparação com concorrentes</h2></div>
-    ${discoveryHtml(discovery, cmp)}
     ${failed.map((f) => `<div class="error-box"><i class="ph ph-warning"></i>Não foi possível analisar ${esc(host(f.url))}: ${esc(f.error)}</div>`).join('')}
-    <div class="ranking">${ranking}</div>
-    <h3>Notas por área</h3>
-    <div class="legend">${legend}</div>
-    <div class="chart" id="cmp-chart"></div>
-    <details style="margin-top:10px"><summary class="caption" style="cursor:pointer">Ver como tabela</summary><div class="table-wrap" style="margin-top:8px"><table class="ds-table"><thead>${head}</thead><tbody>${catRows}</tbody></table></div></details>
-    <div class="cmp-grid">
-      <div><h3>Onde você perde para a concorrência</h3><ul class="insight-list">${insights}</ul></div>
-      <div><h3>O que os concorrentes fazem e você não</h3><ul class="insight-list">${theyDo}</ul></div>
-    </div>
-    ${adv}
-    <h3 class="sub-title">Números lado a lado</h3>
-    <div class="table-wrap"><table class="ds-table"><thead>${head}</thead><tbody>${metricRows}</tbody></table></div>
-    ${galleryHtml(cmp)}
+    ${subTabs('cmp', [
+      {
+        id: 'resumo', label: 'Resumo', icon: 'trophy',
+        html: `<div class="cmp-summary">
+          <div>${discoveryHtml(discovery, cmp)}<div class="ranking">${ranking}</div></div>
+          <div><h3>Notas por área</h3><div class="legend">${legend}</div><div class="chart" id="cmp-chart"></div>
+          <details style="margin-top:10px"><summary class="caption" style="cursor:pointer">Ver como tabela</summary><div class="table-wrap" style="margin-top:8px"><table class="ds-table"><thead>${head}</thead><tbody>${catRows}</tbody></table></div></details></div>
+        </div>`,
+      },
+      {
+        id: 'perde', label: 'Onde você perde', icon: 'trend-down', count: cmp.insights.length + cmp.theyDo.length,
+        html: `<div class="cmp-grid" style="margin-top:0">
+          <div><h3>Números em que você fica atrás</h3><ul class="insight-list">${insights}</ul></div>
+          <div><h3>O que eles fazem e você não</h3><ul class="insight-list">${theyDo}</ul></div>
+        </div>${adv}`,
+      },
+      { id: 'numeros', label: 'Números lado a lado', icon: 'table', html: `<div class="table-wrap"><table class="ds-table"><thead>${head}</thead><tbody>${metricRows}</tbody></table></div><p class="caption" style="margin-top:8px">★ melhor resultado entre os sites.</p>` },
+      cmp.gallery?.length ? { id: 'visual', label: 'Visual lado a lado', icon: 'images', html: galleryHtml(cmp) } : null,
+    ])}
   </section>`;
 }
 
 function galleryHtml(cmp) {
-  if (!cmp.gallery?.length) return '';
-  const tabs = cmp.gallery.map((g, i) => `<button class="tab" role="tab" aria-selected="${i === 0}" data-gtab="${g.id}">${esc(g.label)}</button>`).join('');
+  const tabs = cmp.gallery.map((g, i) => `<button class="tab tab-sm" role="tab" data-tg="gal" data-tk="${g.id}" aria-selected="${i === 0}">${esc(g.label)}</button>`).join('');
   const panels = cmp.gallery
-    .map((g, i) => `<div class="gallery-panel" data-gpanel="${g.id}" ${i === 0 ? '' : 'hidden'}>
+    .map((g, i) => `<div class="gallery-panel" data-tgp="gal" data-tk="${g.id}" ${i === 0 ? '' : 'hidden'}>
       <h4 class="print-only">${esc(g.label)}</h4>
       <div class="gallery ${g.id === 'mobileFull' ? 'gallery-full' : ''} ${g.id === 'mobile' ? 'gallery-narrow' : ''}" style="--cols:${cmp.sites.length}">
         ${g.items
@@ -718,9 +765,7 @@ function galleryHtml(cmp) {
       </div>
     </div>`)
     .join('');
-  return `<h3 class="sub-title">Comparação visual lado a lado</h3>
-    <p class="caption" style="margin:-4px 0 12px">Clique em uma imagem para ampliar.</p>
-    <div class="tabs" role="tablist">${tabs}</div>${panels}`;
+  return `<div class="tabs tabs-sub" role="tablist">${tabs}</div>${panels}<p class="caption" style="margin-top:8px">Clique numa imagem para ampliar.</p>`;
 }
 
 function planCompetitors(id) {
@@ -729,32 +774,36 @@ function planCompetitors(id) {
   return `<p class="vs-note"><i class="ph ph-flag-checkered"></i><span>Já fazem bem: ${rows.map((r) => `<b>${esc(r.name)}</b>${r.value != null && r.value !== '' ? ` (${esc(r.value)})` : ''}`).join(', ')}</span></p>`;
 }
 
+// Item recolhível: a linha mostra o essencial; o conteúdo abre ao clicar
+function accordionRow({ status, title, value, tags = '', body, open = false }) {
+  return `<details class="acc"${open ? ' open' : ''}>
+    <summary><span class="acc-status">${statusBadge(status)}</span><span class="acc-title">${esc(title)}</span>${tags ? `<span class="acc-tags">${tags}</span>` : ''}${value != null && value !== '' ? `<span class="acc-val">${esc(value)}</span>` : ''}<i class="ph ph-caret-down acc-caret"></i></summary>
+    <div class="acc-body">${body}</div>
+  </details>`;
+}
+
 function planSection(r) {
   const p = r.actionPlan;
-  const group = (title, icon, items, note) =>
+  const list = (items, note) =>
     items.length
-      ? `<div><div class="plan-group-head"><div class="icon-seal"><i class="ph ph-${icon}"></i></div><div><h3>${title} <span class="badge badge-neutral">${items.length}</span></h3><span class="caption">${note}</span></div></div>
-        <div class="plan-items">${items
-          .map(
-            (i) => `<div class="plan-item">
-              <h4>${esc(i.title)}</h4>
-              <p>${esc(i.problem)}</p>
-              <p class="how"><b>O que fazer:</b> ${esc(i.fix)}</p>
-              ${evidenceHtml(r.checks.find((c) => c.id === i.id)?.evidence, 2)}
-              ${planCompetitors(i.id)}
-              <div class="tags">${statusBadge(i.status)}<span class="badge badge-neutral">${IMPACT_LABEL[i.impact]}</span><span class="badge badge-neutral">${EFFORT_LABEL[i.effort]}</span><span class="badge badge-neutral"><i class="ph ph-${CAT_ICON[i.category]}"></i>${esc(catLabel(i.category))}</span></div>
-            </div>`,
+      ? `<p class="caption" style="margin:0 0 10px">${note}</p><div class="acc-list">${items
+          .map((i, n) =>
+            accordionRow({
+              status: i.status,
+              title: i.title,
+              tags: `<span class="badge badge-neutral">${IMPACT_LABEL[i.impact]}</span><span class="badge badge-neutral">${EFFORT_LABEL[i.effort]}</span><span class="badge badge-neutral"><i class="ph ph-${CAT_ICON[i.category]}"></i>${esc(catLabel(i.category))}</span>`,
+              open: n === 0,
+              body: `<p>${esc(i.problem)}</p><p class="how"><b>O que fazer:</b> ${esc(i.fix)}</p>${evidenceHtml(r.checks.find((c) => c.id === i.id)?.evidence, 2)}${planCompetitors(i.id)}`,
+            }),
           )
-          .join('')}</div></div>`
-      : '';
+          .join('')}</div>`
+      : '<p class="mute">Nada nesta etapa.</p>';
   return `<section class="card" id="plano">
-    <div class="card-title"><h2>Plano de ação: o que mudar</h2><span class="caption">${p.total} melhoria(s), em ordem de prioridade</span></div>
-    <div class="plan">
-      ${group('Faça agora', 'rocket-launch', p.now, 'Alto impacto e fácil de resolver — comece por aqui.')}
-      ${group('Próximos passos', 'calendar', p.next, 'Importante, mas exige um pouco mais de trabalho.')}
-      ${group('Melhorias contínuas', 'wrench', p.later, 'Ajustes finos para lapidar a página.')}
-      ${p.total === 0 ? '<p>Nenhuma melhoria pendente. Excelente trabalho!</p>' : ''}
-    </div>
+    ${p.total === 0 ? '<p>Nenhuma melhoria pendente. Excelente trabalho!</p>' : subTabs('plan', [
+      { id: 'agora', label: 'Faça agora', icon: 'rocket-launch', count: p.now.length, html: list(p.now, 'Alto impacto e fácil de resolver. Comece por aqui.') },
+      { id: 'proximos', label: 'Próximos passos', icon: 'calendar', count: p.next.length, html: list(p.next, 'Importante, mas exige um pouco mais de trabalho.') },
+      { id: 'continuas', label: 'Melhorias contínuas', icon: 'wrench', count: p.later.length, html: list(p.later, 'Ajustes finos para lapidar a página.') },
+    ])}
   </section>`;
 }
 
@@ -772,7 +821,6 @@ function identitySection(r) {
     ? `<h4 style="margin-top:20px">Combinações com pouco contraste</h4><div class="contrast-pairs">${pairs.map((p) => `<div class="contrast-pair"><span class="demo" style="color:${esc(p.fg)};background:${esc(p.bg)}">Texto exemplo</span><span>${esc(p.fg)} sobre ${esc(p.bg)} — <b>${dec(p.ratio)}:1</b> <span class="faint">(mín. 4,5:1)</span></span></div>`).join('')}</div>`
     : '';
   return `<section class="card" id="identidade">
-    <div class="card-title"><h2>Identidade visual</h2></div>
     <div class="identity">
       <div><h3>Paleta de cores detectada</h3>${sw ? `<div class="swatches">${sw}</div>` : '<p class="mute">Não foi possível extrair as cores.</p>'}${contrast}</div>
       <div><h3>Fontes em uso</h3>${fonts || '<p class="mute">Não foi possível identificar as fontes.</p>'}</div>
@@ -806,53 +854,85 @@ function competitorRows(id, mine) {
   </div>`;
 }
 
+const competitorMini = (id) => {
+  const rows = COMPARE?.byCheck?.[id];
+  if (!rows?.length) return '';
+  return rows.map((r) => `<span class="dot-st st-${r.status || 'info'}" title="${esc(r.name)}: ${r.status ? STATUS[r.status].label : 'sem dados'}"></span>`).join('');
+};
+
 function detailSection(r, categories) {
   const cats = categories.filter((c) => r.checks.some((k) => k.category === c.id));
-  const tabs = cats.map((c, i) => `<button class="tab" role="tab" aria-selected="${i === 0}" data-tab="${c.id}"><i class="ph ph-${CAT_ICON[c.id]}"></i>${esc(c.label)} <span class="tab-count">${r.score.categories[c.id] ?? '–'}</span></button>`).join('');
   const order = { fail: 0, warn: 1, info: 2, ok: 3 };
-  const panels = cats
-    .map((c, i) => {
-      const items = r.checks.filter((k) => k.category === c.id).sort((a, b) => order[a.status] - order[b.status]);
-      return `<div class="tab-panel" role="tabpanel" data-panel="${c.id}" ${i === 0 ? '' : 'hidden'}>
-        <h3 class="print-only">${esc(c.label)}</h3>
-        ${items
-          .map(
-            (k) => `<div class="check">
-              <div>${statusBadge(k.status)}</div>
-              <div>
-                <div class="check-head"><h4>${esc(k.title)}</h4>${k.value != null && k.value !== '' ? `<span class="val">${esc(k.value)}</span>` : ''}</div>
-                ${k.detail ? `<p>${esc(k.detail)}</p>` : ''}
-                ${k.fix && k.status !== 'ok' ? `<p class="fix"><b>Como melhorar:</b> ${esc(k.fix)}</p>` : ''}
-                ${evidenceHtml(k.evidence)}
-                ${k.items?.length ? `<details><summary>Ver itens (${k.items.length})</summary><ul>${k.items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
-                ${competitorRows(k.id, k)}
-              </div>
-            </div>`,
-          )
-          .join('')}
-      </div>`;
-    })
-    .join('');
-  return `<section class="card" id="detalhes"><div class="card-title"><h2>Análise detalhada</h2></div><div class="tabs" role="tablist">${tabs}</div>${panels}</section>`;
+  return `<section class="card" id="detalhes">
+    <div class="detail-tools"><span class="caption">${COMPARE ? 'Os pontos à direita mostram como cada concorrente foi no mesmo item. ' : ''}Clique num item para ver detalhes, imagem e como corrigir.</span>
+      <button class="btn btn-sm btn-ghost" data-action="toggle-all"><i class="ph ph-arrows-out-simple"></i><span>Abrir todos</span></button></div>
+    ${subTabs(
+      'cat',
+      cats.map((c) => {
+        const items = r.checks.filter((k) => k.category === c.id).sort((a, b) => order[a.status] - order[b.status]);
+        return {
+          id: c.id,
+          label: esc(c.label),
+          icon: CAT_ICON[c.id],
+          count: r.score.categories[c.id] ?? '–',
+          html: `<div class="acc-list">${items
+            .map((k) =>
+              accordionRow({
+                status: k.status,
+                title: k.title,
+                value: k.value,
+                tags: competitorMini(k.id),
+                body: `${k.detail ? `<p>${esc(k.detail)}</p>` : ''}
+                  ${k.fix && k.status !== 'ok' ? `<p class="how"><b>Como melhorar:</b> ${esc(k.fix)}</p>` : ''}
+                  ${evidenceHtml(k.evidence)}
+                  ${k.items?.length ? `<details class="items"><summary>Ver itens (${k.items.length})</summary><ul>${k.items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+                  ${competitorRows(k.id, k)}`,
+              }),
+            )
+            .join('')}</div>`,
+        };
+      }),
+      'tabs-cat',
+    )}
+  </section>`;
 }
 
 function wire(root, cmp, hist, data) {
   const currentId = data.id;
-  const selectTab = (id) => {
-    $$('.tab[data-tab]', root).forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === id)));
-    $$('.tab-panel', root).forEach((p) => (p.hidden = p.dataset.panel !== id));
+  // Abas e subabas: botões [data-tg][data-tk] controlam painéis [data-tgp][data-tk] do mesmo grupo
+  const selectTab = (group, key) => {
+    $$(`[data-tg="${group}"]`, root).forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tk === key)));
+    $$(`[data-tgp="${group}"]`, root).forEach((p) => (p.hidden = p.dataset.tk !== key));
+    // Na barra que rola de lado (celular), mantém a aba escolhida à vista
+    $(`[data-tg="${group}"][data-tk="${key}"]`, root)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    draw();
   };
-  $$('.tab[data-tab]', root).forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
-  $$('.tab[data-gtab]', root).forEach((t) =>
+  $$('[data-tg]', root).forEach((t) =>
     t.addEventListener('click', () => {
-      $$('.tab[data-gtab]', root).forEach((x) => x.setAttribute('aria-selected', String(x === t)));
-      $$('.gallery-panel', root).forEach((p) => (p.hidden = p.dataset.gpanel !== t.dataset.gtab));
+      selectTab(t.dataset.tg, t.dataset.tk);
+      if (t.dataset.tg === 'main') scrollToTabs();
     }),
   );
+  const scrollToTabs = () => {
+    const bar = $('.rtabs', root);
+    const top = bar.getBoundingClientRect().top + window.scrollY - 64;
+    if (window.scrollY > top) window.scrollTo({ top, behavior: 'smooth' });
+  };
+  $$('[data-gotab]', root).forEach((b) => b.addEventListener('click', () => { selectTab('main', b.dataset.gotab); scrollToTabs(); }));
   $$('[data-goto]', root).forEach((b) =>
     b.addEventListener('click', () => {
-      selectTab(b.dataset.goto);
-      $('#detalhes').scrollIntoView({ behavior: 'smooth' });
+      selectTab('main', 'detalhes');
+      selectTab('cat', b.dataset.goto);
+      scrollToTabs();
+    }),
+  );
+  $$('[data-action="toggle-all"]', root).forEach((b) =>
+    b.addEventListener('click', () => {
+      const panel = $$('.sub-panel[data-tgp="cat"]', root).find((p) => !p.hidden);
+      const items = $$('details.acc', panel);
+      const open = !items.every((d) => d.open);
+      items.forEach((d) => (d.open = open));
+      b.innerHTML = `<i class="ph ph-arrows-${open ? 'in' : 'out'}-simple"></i><span>${open ? 'Fechar todos' : 'Abrir todos'}</span>`;
     }),
   );
   $$('[data-action="print"]', root).forEach((b) => b.addEventListener('click', () => window.print()));
@@ -892,11 +972,14 @@ function wire(root, cmp, hist, data) {
       }
     }
   });
-  // Gráficos desenhados na largura real (texto fica no tamanho do sistema) e refeitos ao redimensionar
-  const draw = () => {
-    if (cmp) drawComparisonChart($('#cmp-chart'), cmp);
-    if (hist.length > 1) drawEvolutionChart($('#evo-chart'), hist, currentId);
-  };
+  // Gráficos desenhados na largura real (texto no tamanho do sistema), só quando visíveis,
+  // e refeitos ao trocar de aba ou redimensionar
+  function draw() {
+    const cmpEl = $('#cmp-chart', root);
+    const evoEl = $('#evo-chart', root);
+    if (cmp && cmpEl?.offsetParent) drawComparisonChart(cmpEl, cmp);
+    if (hist.length > 1 && evoEl?.offsetParent) drawEvolutionChart(evoEl, hist, currentId);
+  }
   draw();
   chartObserver?.disconnect();
   let lastW = root.clientWidth;
@@ -1035,6 +1118,14 @@ function drawEvolutionChart(container, hist, currentId) {
     });
   });
 }
+
+// Impressão/PDF: abre todos os itens recolhidos e volta ao estado anterior depois
+let printOpened = [];
+window.addEventListener('beforeprint', () => {
+  printOpened = $$('#report details:not([open])');
+  printOpened.forEach((d) => (d.open = true));
+});
+window.addEventListener('afterprint', () => printOpened.forEach((d) => (d.open = false)));
 
 // ---------- Ampliar imagem ----------
 function openLightbox(src, caption) {
