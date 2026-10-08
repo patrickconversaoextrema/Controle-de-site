@@ -12,6 +12,20 @@ Cole o endereço de um site (e de até 3 concorrentes) e receba um relatório co
 
 A arquitetura deixa a porta aberta: a API (`POST /api/analyze`) pode ser usada depois por uma extensão ou plugin que só exibe o relatório.
 
+## Design
+
+A interface segue o design system **Conversão Extrema** — veja [`DESIGN.md`](DESIGN.md): fonte Geist, ícones Phosphor (servidos localmente, sem CDN), tokens de cor claro/escuro, superfícies definidas por borda de 1px (sem sombra), CTA *shiny* com borda esmeralda giratória, botão secundário com anel no hover, grade de pontos de fundo, selos `soft`/`deep`, paleta de gráfico `chart-1..3` em ordem fixa (a 4ª série usa neutro hachurado) e densidade `ds-app` no relatório. Alternância de tema persistida em `localStorage('theme')`, com script anti-flash.
+
+## Relatórios salvos
+
+Toda análise é gravada em um banco SQLite embutido do Node (`node:sqlite`, sem dependência extra) junto com as imagens:
+
+- **Link permanente** — cada relatório fica em `/r/<id>` e pode ser enviado ao cliente (botão "Copiar link do relatório").
+- **Histórico** — a página inicial lista as análises salvas, com filtro por endereço e opção de excluir.
+- **Evolução** — ao analisar a mesma página de novo, o relatório mostra a variação da nota geral e de cada área em relação à análise anterior, e um gráfico com todas as análises daquela página.
+
+Os dados ficam em `DATA_DIR` (padrão `./data`). Faça backup dessa pasta. Atenção: qualquer pessoa com acesso à ferramenta vê o histórico e pode excluir análises — publique atrás de login/VPN se for usar com vários clientes.
+
 ## O que é analisado
 
 | Área | Exemplos de verificações |
@@ -58,7 +72,7 @@ Variáveis (veja `.env.example`):
 
 ```bash
 docker build -t raio-x-site .
-docker run -p 3000:3000 -e PAGESPEED_API_KEY=sua-chave raio-x-site
+docker run -p 3000:3000 -v raiox-dados:/app/data -e PAGESPEED_API_KEY=sua-chave raio-x-site
 ```
 
 Funciona em qualquer serviço que rode containers (Railway, Render, Fly.io, VPS).
@@ -75,7 +89,8 @@ Os testes sobem duas landing pages de exemplo (`test/fixtures/ruim.html` e `boa.
 ## Estrutura
 
 ```
-server.js                    API (fila de análises) + arquivos estáticos
+server.js                    API (fila de análises, relatórios salvos) + arquivos estáticos
+src/store.js                 Banco SQLite: relatórios, imagens, histórico
 public/                      Interface (HTML/CSS/JS puro)
 src/analyzer/
   collect.js                 Baixa HTML, CSS, robots, sitemap, links; abre o navegador
@@ -92,7 +107,10 @@ src/utils/                   Cores (contraste/harmonia) e segurança de URLs
 ```
 POST /api/analyze   { "url": "https://site.com", "competitors": ["https://c1.com"] }  → { "id": "..." }
 GET  /api/jobs/:id  → { status: queued|running|done|error, progress, result }
-GET  /api/img/:id/:n → imagens do relatório (capturas e recortes), disponíveis por 6 horas
+GET  /api/reports?q=&limit=      → análises salvas (mais recentes primeiro)
+GET  /api/reports/:id           → relatório completo + histórico da mesma página
+GET  /api/reports/:id/img/:n    → imagens do relatório (capturas e recortes)
+DELETE /api/reports/:id         → exclui a análise
 GET  /api/health    → { browser: true|false, pagespeed: true|false }
 ```
 
@@ -101,6 +119,6 @@ Por segurança o servidor recusa endereços internos (localhost, 10.x, 192.168.x
 ## Próximos passos sugeridos
 
 - Resumo e recomendações de copy escritos por IA a partir dos dados coletados.
-- Histórico de análises por cliente (banco de dados) e acompanhamento da evolução da nota.
+- Login e separação de histórico por cliente.
 - Marca/logotipo da agência no PDF (white label).
 - Extensão do Chrome que chama esta API para analisar a aba aberta.

@@ -13,6 +13,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
+# Relatórios salvos (SQLite + imagens). Monte um volume aqui para não perder dados.
+RUN mkdir -p /app/data && chown node:node /app/data
+VOLUME ["/app/data"]
+ENV DATA_DIR=/app/data
 
 EXPOSE 3000
 USER node

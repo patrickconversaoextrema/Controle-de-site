@@ -5,60 +5,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Raio-X do Site</title>
   <meta name="description" content="Análise completa de sites e landing pages: velocidade, erros, SEO, imagens, fontes, cores, conversão e comparação com concorrentes.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
-  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Anti-flash: aplica o tema antes da primeira pintura (§5)
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' x2='1'><stop stop-color='%2310b981'/><stop offset='1' stop-color='%2334d399'/></linearGradient></defs><circle cx='16' cy='16' r='16' fill='url(%23g)'/><circle cx='14' cy='14' r='6' fill='none' stroke='white' stroke-width='2.5'/><path d='M18.5 18.5l5 5' stroke='white' stroke-width='2.5' stroke-linecap='round'/></svg>">
+  <link rel="preload" href="/vendor/geist/geist-sans/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/vendor/phosphor/regular/style.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="wrap topbar-inner">
-      <a class="brand" href="/"><span class="brand-mark">RX</span> Raio-X do Site</a>
-      <span class="topbar-note">Análise completa de sites e landing pages</span>
+  <div class="dot-grid" aria-hidden="true"></div>
+
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a class="logo" href="/" data-nav="home">
+        <span class="logo-symbol"><i class="ph ph-magnifying-glass"></i></span>
+        Raio-X do Site
+      </a>
+      <nav class="nav-actions">
+        <a class="btn btn-ghost btn-sm" href="/#historico" data-nav="history"><i class="ph ph-clock-counter-clockwise"></i><span>Histórico</span></a>
+        <button class="btn btn-ghost btn-icon" id="theme-toggle" type="button" aria-label="Alternar tema"><i class="ph ph-moon"></i></button>
+      </nav>
     </div>
   </header>
 
-  <main class="wrap">
-    <section id="start" class="card start">
-      <h1>Descubra o que está fazendo seu site perder clientes</h1>
-      <p class="lead">Cole o endereço da página e, se quiser, de até 3 concorrentes. Analisamos velocidade, erros, SEO, imagens, fontes, cores, celular e conversão — e dizemos exatamente o que mudar.</p>
-      <form id="form" novalidate>
-        <label class="field">
-          <span>Seu site ou landing page</span>
-          <input id="url" name="url" type="text" inputmode="url" placeholder="https://www.seusite.com.br" autocomplete="url" required>
-        </label>
-        <fieldset class="competitors">
-          <legend>Concorrentes <small>(opcional)</small></legend>
-          <input name="c1" type="text" inputmode="url" placeholder="https://concorrente-1.com.br">
-          <input name="c2" type="text" inputmode="url" placeholder="https://concorrente-2.com.br">
-          <input name="c3" type="text" inputmode="url" placeholder="https://concorrente-3.com.br">
-        </fieldset>
-        <button class="btn-primary" type="submit">Analisar agora</button>
-        <p id="form-error" class="form-error" role="alert" hidden></p>
-      </form>
-      <ul class="features">
-        <li>⚡ Velocidade real no celular e desktop</li>
-        <li>🐞 Erros, links e imagens quebradas</li>
-        <li>🔤 Fontes e combinações</li>
-        <li>🎨 Paleta, contraste e destaque do botão</li>
-        <li>🎯 Elementos de conversão</li>
-        <li>🏁 Comparação com concorrentes</li>
-      </ul>
+  <main class="container">
+    <section id="start">
+      <div class="hero">
+        <span class="eyebrow">Raio-X do site</span>
+        <h1>Descubra o que está fazendo seu site <span class="hover-text-shine">perder clientes</span></h1>
+        <p class="lead">Velocidade, erros, SEO, imagens, fontes, cores e conversão — comparados com seus concorrentes e com um plano do que mudar.</p>
+
+        <form id="form" class="analyze-form premium-card" novalidate>
+          <label class="field">
+            <span class="field-label">Seu site ou landing page</span>
+            <span class="input-wrap"><i class="ph ph-globe"></i><input id="url" name="url" class="input input-lg" type="text" inputmode="url" placeholder="https://www.seusite.com.br" autocomplete="url" required></span>
+          </label>
+          <fieldset class="competitors">
+            <legend class="field-label">Concorrentes <span class="faint">(opcional, até 3)</span></legend>
+            <input name="c1" class="input" type="text" inputmode="url" placeholder="concorrente-1.com.br" aria-label="Concorrente 1">
+            <input name="c2" class="input" type="text" inputmode="url" placeholder="concorrente-2.com.br" aria-label="Concorrente 2">
+            <input name="c3" class="input" type="text" inputmode="url" placeholder="concorrente-3.com.br" aria-label="Concorrente 3">
+          </fieldset>
+          <div class="form-actions">
+            <button class="btn btn-lg shiny-cta" type="submit">
+              <span class="shiny-dots" aria-hidden="true"></span>
+              <span class="shiny-cta-content">Analisar agora <i class="ph ph-arrow-right btn-icon-slide"></i></span>
+            </button>
+            <span class="caption">Leva de 20 a 90 segundos por site.</span>
+          </div>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+        </form>
+      </div>
+
+      <div class="features">
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-lightning"></i></div><h4>Velocidade real</h4><p>Carregamento no celular com 4G simulado e no desktop, com as métricas que o Google usa.</p></div>
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-bug"></i></div><h4>Erros com imagem</h4><p>Cada problema visual vem com um recorte da página e o elemento destacado.</p></div>
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-flag-checkered"></i></div><h4>Comparação com concorrentes</h4><p>Item a item e lado a lado: botão, headline, tipografia, formulário e página inteira.</p></div>
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-text-aa"></i></div><h4>Fontes e cores</h4><p>Combinações tipográficas, paleta, harmonia e contraste de leitura.</p></div>
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-target"></i></div><h4>Conversão</h4><p>CTAs, formulário, WhatsApp, prova social, garantia e mensuração.</p></div>
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-clock-counter-clockwise"></i></div><h4>Histórico salvo</h4><p>Cada análise ganha um link permanente e mostra a evolução da nota.</p></div>
+      </div>
+
+      <section id="historico" class="history">
+        <div class="history-head">
+          <div><span class="eyebrow">Histórico</span><h2 style="margin:8px 0 0">Análises salvas</h2></div>
+          <span class="input-wrap"><i class="ph ph-magnifying-glass"></i><input id="history-q" class="input" type="search" placeholder="Filtrar por endereço" aria-label="Filtrar análises por endereço"></span>
+        </div>
+        <div id="history-list" class="table-wrap"><div class="empty">Carregando…</div></div>
+      </section>
     </section>
 
     <section id="progress" class="card progress" hidden aria-live="polite">
       <div class="spinner" aria-hidden="true"></div>
-      <h2>Analisando…</h2>
-      <p id="progress-step" class="muted">Preparando</p>
+      <h3>Analisando…</h3>
+      <p id="progress-step" class="mute body-sm">Preparando</p>
       <div class="bar"><div id="progress-bar"></div></div>
-      <p class="muted small">Abrimos a página em um navegador real (desktop e celular). Leva de 20 a 90 segundos por site.</p>
+      <p class="caption">Abrimos a página em um navegador real (desktop e celular), fotografamos os problemas e comparamos com os concorrentes.</p>
     </section>
 
-    <div id="report" hidden></div>
+    <div id="report" class="report ds-app" hidden></div>
   </main>
 
-  <footer class="footer wrap">
-    <p>Raio-X do Site · Os resultados são estimativas automáticas; valide as mudanças com testes reais.</p>
+  <footer class="container footer">
+    Raio-X do Site · Os resultados são estimativas automáticas; valide as mudanças com testes reais.
   </footer>
 
-  <script src="app.js" type="module"></script>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js" type="module"></script>
 </body>
 </html>

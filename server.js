@@ -5,21 +5,49 @@ import { fileURLToPath } from 'node:url';
 import { analyzeWithCompetitors } from './src/analyzer/index.js';
 import { browserAvailable, closeBrowser } from './src/analyzer/browser.js';
 import { normalizeUrl } from './src/utils/url.js';
+import { openStore } from './src/store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_COMPETITORS = 3;
 const MAX_RUNNING = Number(process.env.MAX_CONCURRENT_JOBS) || 2;
-const JOB_TTL_MS = 6 * 60 * 60 * 1000;
+const JOB_TTL_MS = 60 * 60 * 1000;
+const ID_RE = /^[0-9a-f-]{36}$/;
 
+const store = openStore();
 const app = express();
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Fonte e ícones do design system servidos localmente (sem CDN)
+app.use('/vendor/geist', express.static(path.join(__dirname, 'node_modules/geist/dist/fonts'), { maxAge: '30d' }));
+app.use('/vendor/phosphor', express.static(path.join(__dirname, 'node_modules/@phosphor-icons/web/src'), { maxAge: '30d' }));
 
 /** @type {Map<string, any>} */
 const jobs = new Map();
 const queue = [];
 let running = 0;
+
+/**
+ * Separa as imagens embutidas (data URI) do relatório: elas vão para o banco
+ * e o JSON passa a apontar para /api/reports/:id/img/:n. Repetidas são guardadas uma vez.
+ */
+function extractImages(value, id, images, seen = new Map()) {
+  if (typeof value === 'string' && value.startsWith('data:image/')) {
+    if (!seen.has(value)) {
+      const [meta, b64] = value.split(',', 2);
+      images.push({ type: meta.slice(5).split(';')[0], buf: Buffer.from(b64, 'base64') });
+      seen.set(value, `/api/reports/${id}/img/${images.length - 1}`);
+    }
+    return seen.get(value);
+  }
+  if (Array.isArray(value)) return value.map((v) => extractImages(v, id, images, seen));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = extractImages(v, id, images, seen);
+    return out;
+  }
+  return value;
+}
 
 function pump() {
   while (running < MAX_RUNNING && queue.length) {
@@ -28,12 +56,11 @@ function pump() {
     job.status = 'running';
     analyzeWithCompetitors(job.main, job.competitors, (p) => {
       job.progress = p;
-      job.log.push(`${p.site}: ${p.step}`);
-      if (job.log.length > 50) job.log.shift();
     })
-      .then((result) => {
-        job.images = [];
-        job.result = extractImages(result, job);
+      .then((raw) => {
+        const images = [];
+        const result = extractImages(raw, job.id, images);
+        store.save({ id: job.id, createdAt: new Date().toISOString(), result, images });
         job.status = 'done';
       })
       .catch((err) => {
@@ -46,28 +73,6 @@ function pump() {
         pump();
       });
   }
-}
-
-/**
- * Troca as imagens embutidas (data URI) por URLs servidas pelo servidor,
- * deixando o JSON do relatório leve. Imagens repetidas são guardadas uma vez.
- */
-function extractImages(value, job, seen = new Map()) {
-  if (typeof value === 'string' && value.startsWith('data:image/')) {
-    if (!seen.has(value)) {
-      const [meta, b64] = value.split(',', 2);
-      job.images.push({ type: meta.slice(5).split(';')[0], buf: Buffer.from(b64, 'base64') });
-      seen.set(value, `/api/img/${job.id}/${job.images.length - 1}`);
-    }
-    return seen.get(value);
-  }
-  if (Array.isArray(value)) return value.map((v) => extractImages(v, job, seen));
-  if (value && typeof value === 'object') {
-    const out = {};
-    for (const [k, v] of Object.entries(value)) out[k] = extractImages(v, job, seen);
-    return out;
-  }
-  return value;
 }
 
 setInterval(() => {
@@ -91,7 +96,7 @@ app.post('/api/analyze', (req, res) => {
   }
   if (queue.length > 20) return res.status(503).json({ error: 'Muitas análises na fila. Tente novamente em instantes.' });
   const id = crypto.randomUUID();
-  const job = { id, main, competitors: comps, status: 'queued', createdAt: Date.now(), progress: null, log: [] };
+  const job = { id, main, competitors: comps, status: 'queued', createdAt: Date.now(), progress: null };
   jobs.set(id, job);
   queue.push(job);
   pump();
@@ -100,17 +105,40 @@ app.post('/api/analyze', (req, res) => {
 
 app.get('/api/jobs/:id', (req, res) => {
   const job = jobs.get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Análise não encontrada ou expirada.' });
+  if (!job) {
+    // Job já expirou da memória, mas o relatório pode estar salvo.
+    if (ID_RE.test(req.params.id) && store.get(req.params.id)) return res.json({ id: req.params.id, status: 'done', reportId: req.params.id });
+    return res.status(404).json({ error: 'Análise não encontrada ou expirada.' });
+  }
   const position = job.status === 'queued' ? queue.indexOf(job) + 1 : 0;
-  res.json({ id: job.id, status: job.status, position, progress: job.progress, error: job.error, result: job.status === 'done' ? job.result : undefined });
+  res.json({ id: job.id, status: job.status, position, progress: job.progress, error: job.error, reportId: job.status === 'done' ? job.id : undefined });
 });
 
-app.get('/api/img/:id/:n', (req, res) => {
-  const img = jobs.get(req.params.id)?.images?.[Number(req.params.n)];
-  if (!img) return res.status(404).end();
-  res.set({ 'content-type': img.type, 'cache-control': 'private, max-age=21600' });
-  res.send(img.buf);
+// ---------- Relatórios salvos ----------
+app.get('/api/reports', (req, res) => {
+  res.json(store.list({ limit: req.query.limit, q: String(req.query.q || '') }));
 });
+
+app.get('/api/reports/:id', (req, res) => {
+  const rep = ID_RE.test(req.params.id) ? store.get(req.params.id) : null;
+  if (!rep) return res.status(404).json({ error: 'Relatório não encontrado.' });
+  res.json({ id: rep.id, createdAt: rep.createdAt, history: store.history(rep.pageKey), ...rep.result });
+});
+
+app.get('/api/reports/:id/img/:n', (req, res) => {
+  const img = ID_RE.test(req.params.id) ? store.image(req.params.id, Number(req.params.n)) : null;
+  if (!img) return res.status(404).end();
+  res.set({ 'content-type': img.type, 'cache-control': 'public, max-age=31536000, immutable' });
+  res.send(Buffer.from(img.data));
+});
+
+app.delete('/api/reports/:id', (req, res) => {
+  if (!ID_RE.test(req.params.id) || !store.remove(req.params.id)) return res.status(404).json({ error: 'Relatório não encontrado.' });
+  res.status(204).end();
+});
+
+// Link permanente do relatório
+app.get('/r/:id', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.get('/api/health', async (_req, res) => {
   res.json({ ok: true, browser: await browserAvailable(), pagespeed: Boolean(process.env.PAGESPEED_API_KEY) });
@@ -124,6 +152,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, async () => {
     server.close();
     await closeBrowser();
+    store.close();
     process.exit(0);
   });
 }
