@@ -197,9 +197,22 @@ $('#logout').addEventListener('click', async () => {
   showLogin();
 });
 
+let SEARCH_ON = true;
+async function loadConfig() {
+  try {
+    SEARCH_ON = Boolean((await api('/api/config')).search);
+  } catch {
+    return;
+  }
+  $('#search-off').hidden = SEARCH_ON;
+  $('#niche').closest('.field').hidden = !SEARCH_ON;
+  if (!SEARCH_ON) $('#manual-competitors').open = true;
+}
+
 function showStart() {
   show('start');
   document.title = 'Raio-X do Site';
+  loadConfig();
   loadHistory();
 }
 
@@ -224,7 +237,7 @@ async function loadHistory() {
       <tbody>${rows
         .map(
           (r) => `<tr>
-            <td class="url" title="${esc(r.url)}"><a href="/r/${r.id}" data-nav="report">${esc(host(r.url))}${esc(pathOf(r.url))}</a>${r.shared ? ' <i class="ph ph-link faint" title="Compartilhado com o cliente"></i>' : ''}</td>
+            <td class="url" title="${esc(r.url)}"><a href="/r/${r.id}" data-nav="report">${esc(host(r.url))}${esc(pathOf(r.url))}</a>${r.shared ? ' <i class="ph ph-link faint" title="Compartilhado com o cliente"></i>' : ''}${r.niche ? `<span class="niche-tag">${esc(r.niche)}</span>` : ''}</td>
             <td class="num">${r.overall ?? '<span class="dash">—</span>'}</td>
             <td>${r.competitors.length ? r.competitors.map((c) => `<span class="badge badge-neutral" title="${esc(c.url)}">${esc(host(c.url))}${c.overall != null ? ` · ${c.overall}` : ''}</span>`).join(' ') : '<span class="dash">—</span>'}</td>
             <td>${r.author ? esc(r.author) : '<span class="dash">—</span>'}</td>
@@ -266,9 +279,16 @@ form.addEventListener('submit', async (e) => {
     return;
   }
   const competitors = ['c1', 'c2', 'c3'].map((n) => form[n].value.trim()).filter(Boolean);
+  const niche = form.niche.value.trim();
+  if (!competitors.length && !niche) {
+    err.textContent = SEARCH_ON ? 'Informe o nicho (ex.: clínica odontológica em Campinas) para encontrarmos os concorrentes.' : 'Informe ao menos um concorrente.';
+    err.hidden = false;
+    (SEARCH_ON ? form.niche : form.c1).focus();
+    return;
+  }
   try {
-    const data = await api('/api/analyze', { method: 'POST', body: { url, competitors } });
-    showProgress(1 + competitors.length);
+    const data = await api('/api/analyze', { method: 'POST', body: { url, niche, competitors } });
+    showProgress(competitors.length ? 1 + competitors.length : 4, !competitors.length);
     poll(data.id);
   } catch (ex) {
     err.textContent = ex.message;
@@ -276,9 +296,9 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-function showProgress(total) {
+function showProgress(total, auto = false) {
   show('progress');
-  $('#progress-step').textContent = total > 1 ? `Analisando seu site e ${total - 1} concorrente(s)` : 'Analisando seu site';
+  $('#progress-step').textContent = auto ? 'Analisando seu site; depois buscamos os concorrentes no Google' : total > 1 ? `Analisando seu site e ${total - 1} concorrente(s)` : 'Analisando seu site';
   $('#progress-bar').style.width = '5%';
   window.scrollTo({ top: 0 });
 }
@@ -488,7 +508,7 @@ function renderReport(data) {
     headSection(main, data, previous),
     categorySection(main, categories, previous),
     hist.length > 1 ? evolutionSection(hist, data.id) : '',
-    comparison ? comparisonSection(comparison, data.competitors) : '',
+    comparison ? comparisonSection(comparison, data.competitors, data.discovery) : discoveryOnlySection(data.discovery),
     planSection(main),
     identitySection(main),
     detailSection(main, categories),
@@ -601,10 +621,49 @@ function evolutionSection(hist, currentId) {
   </section>`;
 }
 
-function comparisonSection(cmp, competitors) {
+function discoveryHtml(d, cmp) {
+  if (!d) return '';
+  if (d.error) return `<div class="error-box"><i class="ph ph-warning"></i>${esc(d.error)}</div>`;
+  const colorOf = (url) => {
+    const i = cmp?.sites?.findIndex((s) => s.url === url || host(s.url) === host(url));
+    if (!(i > 0)) return '';
+    return i < 3 ? `<i class="sw" style="background:${SERIES[i]}"></i>` : '<i class="sw swatch-hatch"></i>';
+  };
+  const mine = d.clientPosition
+    ? `<b>${d.clientPosition}º</b> lugar no Google`
+    : `não aparece entre os ${d.searchedResults || 20} primeiros resultados`;
+  const rows = d.competitors
+    .map((c) => `<li><div class="serp-pos"><b>${c.position}º</b><span>no Google</span></div>
+      <div class="serp-main"><b>${colorOf(c.url)}${esc(host(c.url))}</b><span title="${esc(c.title)}">${esc(c.title)}</span>${c.note ? `<span class="caption">${esc(c.note)}</span>` : ''}</div></li>`)
+    .join('');
+  const failed = (d.failed || []).length ? `<span class="caption">Não abriram e foram trocados pelo próximo resultado: ${d.failed.map((f) => esc(host(f.url))).join(', ')}.</span>` : '';
+  const skipped = (d.skipped || []).length ? `<span class="caption">Ignorados por serem diretórios, redes sociais ou portais: ${[...new Set(d.skipped.map((x) => host(x.url)))].slice(0, 6).map(esc).join(', ')}.</span>` : '';
+  return `<div class="discovery">
+    <div class="discovery-head">
+      <div><span class="eyebrow">Busca no Google</span><h3 style="margin:6px 0 0">“${esc(d.query)}”</h3><p class="mute body-sm">Seu site: ${mine}.</p></div>
+      ${serpBadge(d)}
+    </div>
+    ${rows ? `<ul class="serp">${rows}</ul>` : '<p class="mute">Nenhum concorrente direto encontrado nos resultados. Tente um nicho mais específico, com a cidade.</p>'}
+    <div class="discovery-foot">${failed}${skipped}</div>
+  </div>`;
+}
+
+function serpBadge(d) {
+  const ahead = d.competitors.filter((c) => !d.clientPosition || c.position < d.clientPosition).length;
+  if (!d.clientPosition) return '<span class="badge badge-danger"><i class="ph ph-x"></i>Fora dos primeiros resultados</span>';
+  if (!ahead) return '<span class="badge badge-success"><i class="ph ph-check"></i>À frente dos concorrentes</span>';
+  return `<span class="badge badge-warning"><i class="ph ph-warning"></i>Atrás de ${ahead} concorrente${ahead > 1 ? 's' : ''}</span>`;
+}
+
+function discoveryOnlySection(d) {
+  if (!d) return '';
+  return `<section class="card" id="comparacao"><div class="card-title"><h2>Concorrentes</h2></div>${discoveryHtml(d, null)}</section>`;
+}
+
+function comparisonSection(cmp, competitors, discovery) {
   const failed = competitors.filter((c) => c.error);
   const legend = cmp.sites.map((s, i) => `<span>${SERIES_SWATCH(i)}${esc(s.name)}${s.isMain ? ' (você)' : ''}</span>`).join('');
-  const ranking = cmp.ranking.map((r) => `<div class="rank ${r.isMain ? 'me' : ''}"><span class="caption">${r.position}º lugar</span><br><b>${r.overall ?? '–'}</b><small>${esc(r.name)}${r.isMain ? ' · você' : ''}</small></div>`).join('');
+  const ranking = cmp.ranking.map((r) => `<div class="rank ${r.isMain ? 'me' : ''}"><span class="caption">${r.position}º na nota</span><br><b>${r.overall ?? '–'}</b><small>${esc(r.name)}${r.isMain ? ' · você' : ''}</small></div>`).join('');
 
   const head = `<tr><th>Métrica</th>${cmp.sites.map((s) => `<th class="num">${esc(s.name)}${s.isMain ? ' (você)' : ''}</th>`).join('')}</tr>`;
   const metricRows = cmp.metricTable
@@ -625,6 +684,7 @@ function comparisonSection(cmp, competitors) {
 
   return `<section class="card" id="comparacao">
     <div class="card-title"><h2>Comparação com concorrentes</h2></div>
+    ${discoveryHtml(discovery, cmp)}
     ${failed.map((f) => `<div class="error-box"><i class="ph ph-warning"></i>Não foi possível analisar ${esc(host(f.url))}: ${esc(f.error)}</div>`).join('')}
     <div class="ranking">${ranking}</div>
     <h3>Notas por área</h3>

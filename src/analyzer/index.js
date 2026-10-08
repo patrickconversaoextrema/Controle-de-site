@@ -11,6 +11,7 @@ import { securityChecks } from './checks/security.js';
 import { errorChecks } from './checks/errors.js';
 import { scoreCategories, buildActionPlan, buildSummary, CATEGORIES } from './scoring.js';
 import { compareSites } from './compare.js';
+import { findCompetitors } from './competitors.js';
 import { normalizeUrl } from '../utils/url.js';
 
 // Qual recorte de tela ilustra cada checagem. always=true: mostra mesmo quando está tudo bem
@@ -108,14 +109,20 @@ export async function analyzeSite(url, opts = {}) {
  * Analisa o site principal e os concorrentes.
  * onProgress({ site, step, done, total })
  */
-export async function analyzeWithCompetitors(mainUrl, competitorUrls = [], onProgress = () => {}) {
+/**
+ * Analisa o site principal e os concorrentes.
+ * Concorrentes: os informados em competitorUrls ou, se vazio e houver `niche`,
+ * os primeiros resultados da busca pelo nicho (substituindo os que falharem).
+ * onProgress({ site, step, done, total })
+ */
+export async function analyzeWithCompetitors(mainUrl, competitorUrls = [], onProgress = () => {}, { niche = '', maxCompetitors = 3, findFn = findCompetitors } = {}) {
   const urls = [mainUrl, ...competitorUrls].map(normalizeUrl);
-  const total = urls.length;
+  const auto = Boolean(niche && niche.trim()) && competitorUrls.length === 0;
+  let total = auto ? 1 + maxCompetitors : urls.length;
   let done = 0;
   const run = async (u, i) => {
     try {
-      const r = await analyzeSite(u, { onStep: (step) => onProgress({ site: u, index: i, step, done, total }) });
-      return r;
+      return await analyzeSite(u, { onStep: (step) => onProgress({ site: u, index: i, step, done, total }) });
     } catch (err) {
       return { url: u, error: humanError(err) };
     } finally {
@@ -123,16 +130,48 @@ export async function analyzeWithCompetitors(mainUrl, competitorUrls = [], onPro
       onProgress({ site: u, index: i, step: 'Concluído', done, total });
     }
   };
-  // O principal primeiro; concorrentes em paralelo (2 por vez, ou 1 com LOW_MEMORY=1).
+
+  // O principal primeiro: se ele falhar, nem buscamos concorrentes.
   const main = await run(urls[0], 0);
   if (main.error) throw new Error(main.error);
-  const competitors = [];
-  const rest = urls.slice(1);
-  const step = process.env.LOW_MEMORY === '1' ? 1 : 2;
-  for (let i = 0; i < rest.length; i += step) {
-    competitors.push(...(await Promise.all(rest.slice(i, i + step).map((u, j) => run(u, i + j + 1)))));
+
+  let discovery = null;
+  let candidates = urls.slice(1);
+  if (auto) {
+    onProgress({ site: urls[0], index: 0, step: `Buscando concorrentes no Google para "${niche.trim()}"`, done, total });
+    try {
+      discovery = await findFn({ niche, clientUrl: main.finalUrl || urls[0], max: maxCompetitors + 3 });
+      candidates = discovery.competitors.map((c) => c.url);
+    } catch (err) {
+      discovery = { query: niche.trim(), error: err.message, competitors: [] };
+      candidates = [];
+    }
+    total = 1 + Math.min(maxCompetitors, candidates.length);
   }
-  return { main, competitors, comparison: compareSites(main, competitors), categories: CATEGORIES };
+
+  // Concorrentes em paralelo (2 por vez, ou 1 com LOW_MEMORY=1). Na busca automática,
+  // um concorrente que não abre é trocado pelo próximo resultado.
+  const step = process.env.LOW_MEMORY === '1' ? 1 : 2;
+  const competitors = [];
+  const failed = [];
+  let next = 0;
+  while (next < candidates.length && competitors.length < (auto ? maxCompetitors : candidates.length)) {
+    const want = auto ? Math.min(step, maxCompetitors - competitors.length) : step;
+    const batch = candidates.slice(next, next + want);
+    next += batch.length;
+    const results = await Promise.all(batch.map((u, j) => run(u, next - batch.length + j + 1)));
+    for (const r of results) {
+      if (auto && r.error) failed.push({ url: r.url, error: r.error });
+      else competitors.push(r);
+    }
+  }
+
+  if (discovery) {
+    const used = new Set(competitors.map((c) => c.url));
+    discovery.competitors = discovery.competitors.filter((c) => used.has(c.url));
+    discovery.failed = failed;
+  }
+  return { main, competitors, discovery, comparison: compareSites(main, competitors), categories: CATEGORIES };
 }
 
 function humanError(err) {

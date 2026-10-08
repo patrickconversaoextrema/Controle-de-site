@@ -1,6 +1,6 @@
 # Raio-X do Site — analisador de sites e landing pages
 
-Cole o endereço de um site (e de até 3 concorrentes) e receba um relatório completo, em português, com **nota geral**, **panorama por área**, **comparação com a concorrência** e um **plano de ação** dizendo o que mudar e em que ordem.
+Informe o endereço do site e o **nicho** (ex.: "clínica odontológica em Campinas"). A ferramenta busca o nicho no Google, escolhe os 3 primeiros concorrentes de verdade e entrega um relatório completo, em português, com **nota geral**, **panorama por área**, **comparação com a concorrência** e um **plano de ação** dizendo o que mudar e em que ordem.
 
 ## Por que um site (e não extensão ou plugin)?
 
@@ -11,6 +11,16 @@ Cole o endereço de um site (e de até 3 concorrentes) e receba um relatório co
 | Plugin WordPress | Fica dentro do painel | Só serve para WordPress; não analisa concorrentes com qualidade |
 
 A arquitetura deixa a porta aberta: a API (`POST /api/analyze`) pode ser usada depois por uma extensão ou plugin que só exibe o relatório.
+
+## Concorrentes automáticos pelo nicho
+
+1. O site do cliente é analisado primeiro.
+2. O nicho é buscado no Google (Brasil, em português) pela API do [Serper](https://serper.dev) — ou pelo [Brave Search](https://brave.com/search/api/) como alternativa.
+3. Dos 20 primeiros resultados são descartados diretórios, redes sociais, marketplaces, portais de notícia, sites de governo e o próprio cliente. Se o resultado for um artigo de blog, usamos a página inicial daquele site.
+4. Os 3 primeiros que sobram são analisados. Se algum não abrir, entra o próximo da lista.
+5. O relatório mostra a busca feita, a posição de cada concorrente no Google, **a posição do site do cliente** (ou se ele está fora dos primeiros resultados) e o que foi ignorado.
+
+Configure `SERPER_API_KEY` (2.500 buscas grátis no cadastro, depois cerca de US$ 1 a cada 1.000) — cada análise usa 1 busca. Sem a chave, o formulário pede os concorrentes manualmente. Ainda é possível informar concorrentes à mão em **"Prefiro informar os concorrentes"**; nesse caso a busca não é feita.
 
 ## Design
 
@@ -25,6 +35,7 @@ O repositório já traz o `render.yaml` (Blueprint) e o `Dockerfile` com o Chrom
 3. O Render vai pedir os valores das variáveis:
    - `ADMIN_EMAIL` — seu e-mail de acesso (vira o primeiro administrador).
    - `ADMIN_PASSWORD` — senha inicial (mínimo 8 caracteres; troque depois em **Minha conta**).
+   - `SERPER_API_KEY` — chave do [serper.dev](https://serper.dev) para encontrar os concorrentes pelo nicho (crie a conta, copie a "API Key").
    - `PAGESPEED_API_KEY` — opcional, chave gratuita do Google PageSpeed.
 4. Confirme. O primeiro deploy leva alguns minutos (instala o Chromium). No fim aparece o endereço `https://raio-x-do-site.onrender.com` (ou parecido).
 5. Abra o endereço, entre com o e-mail/senha do passo 3 e cadastre a equipe em **Equipe**.
@@ -131,13 +142,16 @@ src/analyzer/
   checks/*.js                Uma regra de negócio por área
   scoring.js                 Notas por área, nota geral, plano de ação e resumo
   compare.js                 Comparação com concorrentes
+  competitors.js             Busca de concorrentes pelo nicho (Serper/Brave) e filtros
 src/utils/                   Cores (contraste/harmonia) e segurança de URLs
 ```
 
 ## API
 
 ```
-POST /api/analyze   { "url": "https://site.com", "competitors": ["https://c1.com"] }  → { "id": "..." }
+POST /api/analyze   { "url": "https://site.com", "niche": "clínica odontológica em Campinas" }  → { "id": "..." }
+                    (ou "competitors": ["https://c1.com"] para informar os concorrentes)
+GET  /api/config    → { search: "serper" | "brave" | null }
 GET  /api/jobs/:id  → { status: queued|running|done|error, progress, result }
 POST /api/login · POST /api/logout · GET /api/me · POST /api/me/password
 GET/POST /api/users · PATCH/DELETE /api/users/:id      (administrador)

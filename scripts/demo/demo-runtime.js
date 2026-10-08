@@ -33,10 +33,11 @@
     if (!me) return json({ error: 'Faça login para continuar.' }, 401);
 
     if (path === '/api/me/password') return body.current ? json({ ok: true }) : json({ error: 'Senha atual incorreta.' }, 400);
-    if (path === '/api/analyze') return json({ error: 'Esta é uma demonstração: as análises rodam no servidor. Abra um dos relatórios do histórico abaixo.' }, 400);
+    if (path === '/api/config') return json({ search: 'serper' });
+    if (path === '/api/analyze') return json({ error: 'Esta é uma demonstração: as análises e a busca de concorrentes rodam no servidor. Abra um dos relatórios do histórico abaixo.' }, 400);
     if (path === '/api/reports') {
       const term = (q.get('q') || '').toLowerCase();
-      return json(D.list.filter((r) => D.reports[r.id] && r.url.toLowerCase().includes(term)).map((r) => ({ ...r, shared: !!D.reports[r.id].shareUrl })));
+      return json(D.list.filter((r) => D.reports[r.id] && (r.url + ' ' + (r.niche || '')).toLowerCase().includes(term)).map((r) => ({ ...r, shared: !!D.reports[r.id].shareUrl })));
     }
     if ((m = path.match(/^\/api\/reports\/([^/]+)\/share$/))) {
       const rep = D.reports[m[1]];

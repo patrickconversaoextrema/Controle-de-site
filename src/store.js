@@ -58,17 +58,18 @@ export function openStore(dir = process.env.DATA_DIR || path.resolve('data')) {
   const cols = db.prepare('PRAGMA table_info(reports)').all().map((c) => c.name);
   if (!cols.includes('created_by')) db.exec('ALTER TABLE reports ADD COLUMN created_by TEXT');
   if (!cols.includes('share_token')) db.exec('ALTER TABLE reports ADD COLUMN share_token TEXT');
+  if (!cols.includes('niche')) db.exec('ALTER TABLE reports ADD COLUMN niche TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS reports_share ON reports (share_token) WHERE share_token IS NOT NULL');
 
   const insertReport = db.prepare(
-    'INSERT INTO reports (id, created_at, page_key, url, overall, categories, competitors, result, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO reports (id, created_at, page_key, url, overall, categories, competitors, result, created_by, niche) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
   const publicUser = (u) => u && { id: u.id, email: u.email, name: u.name, role: u.role, disabled: !!u.disabled, createdAt: u.created_at };
   const insertImage = db.prepare('INSERT INTO images (report_id, n, type, data) VALUES (?, ?, ?, ?)');
 
   return {
-    save({ id, createdAt, result, images, createdBy = null }) {
+    save({ id, createdAt, result, images, createdBy = null, niche = null }) {
       const main = result.main;
       db.exec('BEGIN');
       try {
@@ -82,6 +83,7 @@ export function openStore(dir = process.env.DATA_DIR || path.resolve('data')) {
           JSON.stringify(result.competitors.map((c) => ({ url: c.finalUrl || c.url, overall: c.score?.overall ?? null, error: c.error || null }))),
           JSON.stringify(result),
           createdBy,
+          niche,
         );
         images.forEach((img, n) => insertImage.run(id, n, img.type, img.buf));
         db.exec('COMMIT');
@@ -122,12 +124,12 @@ export function openStore(dir = process.env.DATA_DIR || path.resolve('data')) {
       const like = `%${q.toLowerCase()}%`;
       return db
         .prepare(
-          `SELECT r.id, r.created_at, r.url, r.overall, r.competitors, r.created_by, r.share_token IS NOT NULL AS shared, u.name AS author
+          `SELECT r.id, r.created_at, r.url, r.overall, r.competitors, r.created_by, r.niche, r.share_token IS NOT NULL AS shared, u.name AS author
            FROM reports r LEFT JOIN users u ON u.id = r.created_by
-           WHERE lower(r.url) LIKE ? ORDER BY r.created_at DESC LIMIT ?`,
+           WHERE lower(r.url) LIKE ? OR lower(coalesce(r.niche, '')) LIKE ? ORDER BY r.created_at DESC LIMIT ?`,
         )
-        .all(like, Math.min(Number(limit) || 30, 200))
-        .map((r) => ({ id: r.id, createdAt: r.created_at, url: r.url, overall: r.overall, competitors: JSON.parse(r.competitors), createdBy: r.created_by, author: r.author, shared: !!r.shared }));
+        .all(like, like, Math.min(Number(limit) || 30, 200))
+        .map((r) => ({ id: r.id, createdAt: r.created_at, url: r.url, overall: r.overall, competitors: JSON.parse(r.competitors), createdBy: r.created_by, author: r.author, niche: r.niche, shared: !!r.shared }));
     },
 
     remove(id) {

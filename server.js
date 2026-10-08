@@ -6,6 +6,7 @@ import { analyzeWithCompetitors } from './src/analyzer/index.js';
 import { browserAvailable, closeBrowser } from './src/analyzer/browser.js';
 import { normalizeUrl } from './src/utils/url.js';
 import { openStore } from './src/store.js';
+import { searchProvider } from './src/analyzer/competitors.js';
 import {
   SESSION_COOKIE, SESSION_TTL_MS, hashPassword, checkLogin, verifyPassword, validatePassword, validEmail,
   parseCookies, sessionCookie, createRateLimiter, ensureAdmin,
@@ -99,6 +100,9 @@ app.post('/api/me/password', requireAuth, (req, res) => {
 });
 
 // ---------- Equipe (admin) ----------
+// O que a interface precisa saber sobre o servidor
+app.get('/api/config', requireAuth, (_req, res) => res.json({ search: searchProvider() }));
+
 app.get('/api/users', requireAdmin, (_req, res) => res.json(store.listUsers()));
 
 app.post('/api/users', requireAdmin, (req, res) => {
@@ -179,11 +183,11 @@ function pump() {
     job.status = 'running';
     analyzeWithCompetitors(job.main, job.competitors, (p) => {
       job.progress = p;
-    })
+    }, { niche: job.niche })
       .then((raw) => {
         const images = [];
         const result = extractImages(raw, job.id, images);
-        store.save({ id: job.id, createdAt: new Date().toISOString(), result, images, createdBy: job.userId });
+        store.save({ id: job.id, createdAt: new Date().toISOString(), result, images, createdBy: job.userId, niche: job.niche || null });
         job.status = 'done';
       })
       .catch((err) => {
@@ -205,6 +209,8 @@ setInterval(() => {
 
 app.post('/api/analyze', requireAuth, (req, res) => {
   const { url, competitors = [] } = req.body || {};
+  const niche = String(req.body?.niche || '').trim().replace(/\s+/g, ' ');
+  if (niche.length > 120) return res.status(400).json({ error: 'Nicho longo demais (máximo de 120 caracteres).' });
   let main;
   let comps;
   try {
@@ -217,9 +223,11 @@ app.post('/api/analyze', requireAuth, (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
+  if (!comps.length && !niche) return res.status(400).json({ error: 'Informe o nicho para encontrarmos os concorrentes, ou digite os concorrentes manualmente.' });
+  if (!comps.length && !searchProvider()) return res.status(400).json({ error: 'A busca automática de concorrentes não está configurada no servidor. Informe os concorrentes manualmente ou peça ao administrador para configurar a SERPER_API_KEY.' });
   if (queue.length > 20) return res.status(503).json({ error: 'Muitas análises na fila. Tente novamente em instantes.' });
   const id = crypto.randomUUID();
-  const job = { id, main, competitors: comps, status: 'queued', createdAt: Date.now(), progress: null, userId: req.user.id };
+  const job = { id, main, competitors: comps, niche: comps.length ? '' : niche, status: 'queued', createdAt: Date.now(), progress: null, userId: req.user.id };
   jobs.set(id, job);
   queue.push(job);
   pump();
@@ -311,7 +319,7 @@ for (const route of ['/r/:id', '/p/:token', '/login', '/equipe', '/conta']) app.
 // Verificação de saúde (usada pelo Render) — leve, não abre o navegador
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/status', requireAdmin, async (_req, res) => {
-  res.json({ browser: await browserAvailable(), pagespeed: Boolean(process.env.PAGESPEED_API_KEY), maxConcurrentJobs: MAX_RUNNING, queue: queue.length, running });
+  res.json({ browser: await browserAvailable(), pagespeed: Boolean(process.env.PAGESPEED_API_KEY), search: searchProvider(), maxConcurrentJobs: MAX_RUNNING, queue: queue.length, running });
 });
 
 const server = app.listen(PORT, () => {

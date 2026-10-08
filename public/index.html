@@ -75,19 +75,29 @@
       <div class="hero">
         <span class="eyebrow">Raio-X do site</span>
         <h1>Descubra o que está fazendo seu site <span class="hover-text-shine">perder clientes</span></h1>
-        <p class="lead">Velocidade, erros, SEO, imagens, fontes, cores e conversão — comparados com seus concorrentes e com um plano do que mudar.</p>
+        <p class="lead">Informe o site e o nicho. Encontramos os concorrentes no Google e comparamos velocidade, erros, SEO, imagens, fontes, cores e conversão, com um plano do que mudar.</p>
 
         <form id="form" class="analyze-form premium-card" novalidate>
           <label class="field">
             <span class="field-label">Seu site ou landing page</span>
             <span class="input-wrap"><i class="ph ph-globe"></i><input id="url" name="url" class="input input-lg" type="text" inputmode="url" placeholder="https://www.seusite.com.br" autocomplete="url" required></span>
           </label>
-          <fieldset class="competitors">
-            <legend class="field-label">Concorrentes <span class="faint">(opcional, até 3)</span></legend>
-            <input name="c1" class="input" type="text" inputmode="url" placeholder="concorrente-1.com.br" aria-label="Concorrente 1">
-            <input name="c2" class="input" type="text" inputmode="url" placeholder="concorrente-2.com.br" aria-label="Concorrente 2">
-            <input name="c3" class="input" type="text" inputmode="url" placeholder="concorrente-3.com.br" aria-label="Concorrente 3">
-          </fieldset>
+          <label class="field">
+            <span class="field-label">Nicho</span>
+            <span class="input-wrap"><i class="ph ph-storefront"></i><input id="niche" name="niche" class="input" type="text" maxlength="120" placeholder="ex.: clínica odontológica em Campinas" autocomplete="off"></span>
+            <span class="caption">Buscamos esse termo no Google e comparamos seu site com os 3 primeiros concorrentes. Diretórios, redes sociais e marketplaces são ignorados. Incluir a cidade deixa a comparação mais precisa.</span>
+          </label>
+          <p id="search-off" class="notice" hidden><i class="ph ph-info"></i><span>A busca automática de concorrentes ainda não foi configurada no servidor (SERPER_API_KEY). Por enquanto, informe os concorrentes abaixo.</span></p>
+          <details id="manual-competitors" class="manual">
+            <summary class="caption"><i class="ph ph-caret-right"></i>Prefiro informar os concorrentes</summary>
+            <fieldset class="competitors">
+              <legend class="sr-only">Concorrentes</legend>
+              <input name="c1" class="input" type="text" inputmode="url" placeholder="concorrente-1.com.br" aria-label="Concorrente 1">
+              <input name="c2" class="input" type="text" inputmode="url" placeholder="concorrente-2.com.br" aria-label="Concorrente 2">
+              <input name="c3" class="input" type="text" inputmode="url" placeholder="concorrente-3.com.br" aria-label="Concorrente 3">
+            </fieldset>
+            <span class="caption">Se preencher algum, usamos estes no lugar da busca pelo nicho.</span>
+          </details>
           <div class="form-actions">
             <button class="btn btn-lg shiny-cta" type="submit">
               <span class="shiny-dots" aria-hidden="true"></span>
@@ -102,7 +112,7 @@
       <div class="features">
         <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-lightning"></i></div><h4>Velocidade real</h4><p>Carregamento no celular com 4G simulado e no desktop, com as métricas que o Google usa.</p></div>
         <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-bug"></i></div><h4>Erros com imagem</h4><p>Cada problema visual vem com um recorte da página e o elemento destacado.</p></div>
-        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-flag-checkered"></i></div><h4>Comparação com concorrentes</h4><p>Item a item e lado a lado: botão, headline, tipografia, formulário e página inteira.</p></div>
+        <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-flag-checkered"></i></div><h4>Concorrentes do Google</h4><p>A partir do nicho, achamos quem aparece no Google e comparamos item a item e lado a lado.</p></div>
         <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-text-aa"></i></div><h4>Fontes e cores</h4><p>Combinações tipográficas, paleta, harmonia e contraste de leitura.</p></div>
         <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-target"></i></div><h4>Conversão</h4><p>CTAs, formulário, WhatsApp, prova social, garantia e mensuração.</p></div>
         <div class="premium-card feature"><div class="icon-seal"><i class="ph ph-clock-counter-clockwise"></i></div><h4>Histórico salvo</h4><p>Cada análise ganha um link permanente e mostra a evolução da nota.</p></div>
@@ -111,7 +121,7 @@
       <section id="historico" class="history">
         <div class="history-head">
           <div><span class="eyebrow">Histórico</span><h2 style="margin:8px 0 0">Análises salvas</h2></div>
-          <span class="input-wrap"><i class="ph ph-magnifying-glass"></i><input id="history-q" class="input" type="search" placeholder="Filtrar por endereço" aria-label="Filtrar análises por endereço"></span>
+          <span class="input-wrap"><i class="ph ph-magnifying-glass"></i><input id="history-q" class="input" type="search" placeholder="Filtrar por endereço ou nicho" aria-label="Filtrar análises por endereço ou nicho"></span>
         </div>
         <div id="history-list" class="table-wrap"><div class="empty">Carregando…</div></div>
       </section>

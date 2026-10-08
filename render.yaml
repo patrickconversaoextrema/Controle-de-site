@@ -19,6 +19,8 @@ services:
         sync: false
       - key: ADMIN_NAME
         value: Administrador
+      - key: SERPER_API_KEY      # busca dos concorrentes no Google (serper.dev — 2.500 buscas grátis)
+        sync: false
       - key: PAGESPEED_API_KEY   # opcional: chave gratuita do Google PageSpeed Insights
         sync: false
       - key: LOW_MEMORY

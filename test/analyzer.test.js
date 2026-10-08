@@ -73,3 +73,37 @@ test('bloqueia endereços internos quando a proteção está ativa', async () =>
     process.env.ALLOW_PRIVATE_URLS = '1';
   }
 });
+
+test('busca pelo nicho: concorrente que não abre é trocado pelo próximo resultado', async () => {
+  const findFn = async ({ niche, clientUrl, max }) => {
+    assert.equal(niche, 'clínica odontológica');
+    assert.match(clientUrl, /\/ruim$/);
+    assert.equal(max, 4);
+    return {
+      query: niche,
+      provider: 'serper',
+      clientPosition: 7,
+      searchedResults: 20,
+      skipped: [],
+      competitors: [
+        { url: `${base}/nao-existe.html`, title: 'Fora do ar', position: 1 },
+        { url: `${base}/boa`, title: 'Boa', position: 2 },
+        { url: `${base}/media`, title: 'Média', position: 3 },
+      ],
+    };
+  };
+  const r = await analyzeWithCompetitors(`${base}/ruim`, [], () => {}, { niche: 'clínica odontológica', maxCompetitors: 1, findFn });
+  assert.equal(r.competitors.length, 1);
+  assert.match(r.competitors[0].finalUrl, /\/boa$/);
+  assert.equal(r.discovery.failed.length, 1);
+  assert.deepEqual(r.discovery.competitors.map((c) => c.position), [2]);
+  assert.equal(r.discovery.clientPosition, 7);
+});
+
+test('busca pelo nicho sem configuração: relatório sai sem concorrentes e com o aviso', async () => {
+  const findFn = async () => { throw new Error('A busca automática de concorrentes não está configurada'); };
+  const r = await analyzeWithCompetitors(`${base}/boa`, [], () => {}, { niche: 'x', findFn });
+  assert.equal(r.competitors.length, 0);
+  assert.match(r.discovery.error, /não está configurada/);
+  assert.equal(r.comparison, null);
+});

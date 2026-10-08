@@ -55,7 +55,7 @@ css += '\n/* demonstração */\n[data-action="print"] { display: none !important
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const bodyInner = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>'))
   .replace('<script src="/app.js" type="module"></script>', '')
-  .replace('<div class="dot-grid" aria-hidden="true"></div>', '<div class="dot-grid" aria-hidden="true"></div>\n  <div class="demo-ribbon">Demonstração com páginas de exemplo. Entre com o e-mail já preenchido e qualquer senha. As análises novas funcionam só no site hospedado.</div>');
+  .replace('<div class="dot-grid" aria-hidden="true"></div>', '<div class="dot-grid" aria-hidden="true"></div>\n  <div class="demo-ribbon">Demonstração com páginas e resultados de busca de exemplo. Entre com o e-mail já preenchido e qualquer senha. Análises novas funcionam só no site hospedado.</div>');
 
 const page = `<title>Raio-X do Site</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">

@@ -495,6 +495,33 @@ table.ds-table { width: 100%; border-collapse: collapse; font-size: 14px; min-wi
 #lightbox p { margin: 8px 0 0; font-size: 13px; color: rgb(var(--c-mute)); }
 #lightbox form { text-align: right; margin-bottom: 6px; }
 
+/* Concorrentes manuais (recolhidos) */
+.manual summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; color: rgb(var(--c-ink)); font-weight: 500; }
+.manual summary::-webkit-details-marker { display: none; }
+.manual summary .ph { transition: transform var(--dur-fast) ease; }
+.manual[open] summary .ph { transform: rotate(90deg); }
+.manual[open] { display: grid; gap: 8px; }
+.manual .competitors { margin-top: 4px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.analyze-form .notice { margin: 0; }
+
+/* Concorrentes encontrados */
+.discovery { display: grid; gap: 14px; margin-bottom: 20px; }
+.discovery-head { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; justify-content: space-between; }
+.discovery-head p { margin: 2px 0 0; }
+.serp { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.serp li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center; border: 1px solid rgb(var(--c-hairline)); border-radius: var(--radius-md); padding: 10px 12px; }
+.serp li.me { border-color: var(--brand-grad-from); }
+.serp-pos { text-align: center; font-variant-numeric: tabular-nums; }
+.serp-pos b { display: block; font-size: 20px; line-height: 1; color: rgb(var(--c-ink)); font-weight: 600; letter-spacing: -0.02em; }
+.serp-pos span { font-size: 11px; color: rgb(var(--c-mute)); }
+.serp-main { min-width: 0; }
+.serp-main b { display: flex; gap: 6px; align-items: center; color: rgb(var(--c-ink)); font-weight: 600; font-size: 14px; }
+.serp-main span { display: block; font-size: 13px; color: rgb(var(--c-mute)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.serp-main i.sw { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+.discovery-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.niche-tag { display: block; font-size: 12px; color: rgb(var(--c-mute)); font-weight: 400; }
+
 /* Login */
 .auth { min-height: calc(100vh - 64px - 120px); display: grid; place-items: center; padding: 48px 0; }
 .auth-card { width: min(420px, 100%); padding: 32px; display: grid; gap: 16px; }

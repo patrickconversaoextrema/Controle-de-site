@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.webp': 'image/webp' };
 
-export function startFixtureServer(port = 0) {
+export function startFixtureServer(port = 0, host = '127.0.0.1') {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     let p = url.pathname;
@@ -35,10 +35,10 @@ export function startFixtureServer(port = 0) {
     res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });
-  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
+  return new Promise((resolve) => server.listen(port, host, () => resolve(server)));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const s = await startFixtureServer(Number(process.env.PORT) || 4000);
+  const s = await startFixtureServer(Number(process.env.PORT) || 4000, process.env.HOST || '127.0.0.1');
   console.log('fixtures em http://127.0.0.1:' + s.address().port);
 }
