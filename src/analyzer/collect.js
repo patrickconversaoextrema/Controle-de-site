@@ -16,10 +16,10 @@ export async function collect(url, { onStep = () => {}, checkLinks = true } = {}
 
   onStep('Abrindo a página no navegador (desktop e celular)');
   const psiPromise = runPageSpeed(base, 'mobile');
-  const [desktop, mobile] = await Promise.all([
-    collectWithBrowser(base, 'desktop').catch((e) => ({ navError: e.message })),
-    collectWithBrowser(base, 'mobile').catch((e) => ({ navError: e.message })),
-  ]);
+  const visit = (profile) => collectWithBrowser(base, profile).catch((e) => ({ navError: e.message }));
+  // Em servidores com pouca memória (LOW_MEMORY=1) abre uma aba por vez.
+  const [desktop, mobile] =
+    process.env.LOW_MEMORY === '1' ? [await visit('desktop'), await visit('mobile')] : await Promise.all([visit('desktop'), visit('mobile')]);
 
   onStep('Lendo CSS, fontes, robots.txt e sitemap');
   const cssUrls = $('link[rel~="stylesheet"][href]')

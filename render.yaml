@@ -1,0 +1,27 @@
+# Blueprint do Render: https://render.com/docs/blueprint-spec
+# No painel do Render: New → Blueprint → escolha este repositório.
+services:
+  - type: web
+    name: raio-x-do-site
+    runtime: docker
+    plan: starter            # 512 MB. Se as análises falharem por memória, suba para "standard".
+    region: virginia
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: dados
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: ADMIN_EMAIL     # e-mail do primeiro administrador (pedido ao criar)
+        sync: false
+      - key: ADMIN_PASSWORD  # senha inicial do administrador (mín. 8 caracteres; troque depois em "Minha conta")
+        sync: false
+      - key: ADMIN_NAME
+        value: Administrador
+      - key: PAGESPEED_API_KEY   # opcional: chave gratuita do Google PageSpeed Insights
+        sync: false
+      - key: LOW_MEMORY
+        value: "1"
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"

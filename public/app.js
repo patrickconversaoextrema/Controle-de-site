@@ -76,28 +76,129 @@ document.addEventListener('pointermove', (e) => {
   card.style.setProperty('--spot-y', `${e.clientY - r.top}px`);
 });
 
-// ---------- Rotas ----------
-function route() {
-  const m = location.pathname.match(/^\/r\/([0-9a-f-]{36})$/);
-  if (m) return loadReport(m[1]);
-  showStart();
-  if (location.hash === '#historico') $('#historico').scrollIntoView();
+// ---------- API e sessão ----------
+const DEMO = Boolean(window.RX_DEMO); // demonstração estática (sem servidor): rotas por hash
+let ME = null;
+let PUBLIC = false;
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(path, {
+    method,
+    credentials: 'same-origin',
+    headers: { 'x-requested-with': 'raio-x', ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (res.status === 401 && path !== '/api/login' && !path.startsWith('/api/public')) {
+    ME = null;
+    showLogin(data);
+    throw new Error(data?.error || 'Faça login para continuar.');
+  }
+  if (!res.ok) throw new Error(data?.error || 'Algo deu errado. Tente novamente.');
+  return data;
 }
-window.addEventListener('popstate', route);
+
+const VIEWS = ['login', 'start', 'progress', 'report', 'team', 'account'];
+function show(view) {
+  for (const v of VIEWS) $(`#${v}`).hidden = v !== view;
+  $('#nav-app').hidden = view === 'login' || PUBLIC;
+}
+
+// ---------- Rotas ----------
+// Na demonstração as rotas ficam só em memória (o visualizador não permite mudar a URL)
+let demoPath = DEMO ? window.RX_DEMO.start || '/' : null;
+const currentPath = () => (DEMO ? demoPath : location.pathname);
+function go(path) {
+  if (DEMO) demoPath = path;
+  else history.pushState({}, '', path);
+  route();
+}
+
+async function route() {
+  const path = currentPath();
+  const pub = path.match(/^\/p\/([A-Za-z0-9_-]{20,64})$/);
+  PUBLIC = Boolean(pub);
+  if (pub) return loadPublic(pub[1]);
+  if (!ME) {
+    try {
+      ME = (await api('/api/me')).user;
+    } catch {
+      return;
+    }
+  }
+  renderUserMenu();
+  const m = path.match(/^\/r\/([0-9a-f-]{36})$/);
+  if (m) return loadReport(m[1]);
+  if (path === '/equipe') return ME.role === 'admin' ? showTeam() : go('/');
+  if (path === '/conta') return showAccount();
+  if (path === '/login') return go('/');
+  showStart();
+  if (location.hash === '#historico' || path === '/#historico') $('#historico').scrollIntoView();
+}
+if (!DEMO) window.addEventListener('popstate', route);
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[data-nav]');
   if (!a) return;
   e.preventDefault();
-  history.pushState({}, '', a.getAttribute('href'));
-  route();
-  if (a.dataset.nav === 'history') $('#historico').scrollIntoView({ behavior: 'smooth' });
+  $('#user-menu')?.removeAttribute('open');
+  const href = a.getAttribute('href');
+  go(href === '/#historico' ? '/' : href);
+  if (a.dataset.nav === 'history') setTimeout(() => $('#historico').scrollIntoView({ behavior: 'smooth' }), 50);
   else window.scrollTo({ top: 0 });
 });
 
+// ---------- Login ----------
+function showLogin(info) {
+  show('login');
+  document.title = 'Entrar · Raio-X do Site';
+  $('#login-setup').hidden = !info?.setupNeeded;
+  setTimeout(() => $('#login-email').focus(), 50);
+}
+
+$('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = $('#login-error');
+  err.hidden = true;
+  const btn = $('#login-form button[type=submit]');
+  btn.disabled = true;
+  try {
+    const { user } = await api('/api/login', { method: 'POST', body: { email: $('#login-email').value, password: $('#login-password').value } });
+    ME = user;
+    $('#login-password').value = '';
+    if (currentPath() === '/login') go('/');
+    else route();
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderUserMenu() {
+  const menu = $('#user-menu');
+  menu.hidden = !ME;
+  if (!ME) return;
+  $('#user-name').textContent = ME.name.split(' ')[0];
+  $('#user-initials').textContent = ME.name.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+  $('#user-full').textContent = ME.name;
+  $('#user-email').textContent = ME.email;
+  $('#menu-team').hidden = ME.role !== 'admin';
+}
+document.addEventListener('click', (e) => {
+  const menu = $('#user-menu');
+  if (menu?.open && !menu.contains(e.target)) menu.removeAttribute('open');
+});
+$('#logout').addEventListener('click', async () => {
+  $('#user-menu').removeAttribute('open');
+  try { await api('/api/logout', { method: 'POST' }); } catch {}
+  ME = null;
+  if (!DEMO) history.pushState({}, '', '/');
+  showLogin();
+});
+
 function showStart() {
-  $('#start').hidden = false;
-  $('#progress').hidden = true;
-  $('#report').hidden = true;
+  show('start');
   document.title = 'Raio-X do Site';
   loadHistory();
 }
@@ -113,22 +214,22 @@ async function loadHistory() {
   const box = $('#history-list');
   try {
     const q = $('#history-q').value.trim();
-    const res = await fetch(`/api/reports?limit=30&q=${encodeURIComponent(q)}`);
-    const rows = await res.json();
+    const rows = await api(`/api/reports?limit=30&q=${encodeURIComponent(q)}`);
     if (!rows.length) {
       box.innerHTML = `<div class="empty">${q ? 'Nenhuma análise encontrada para esse filtro.' : 'Nenhuma análise salva ainda. Faça a primeira acima.'}</div>`;
       return;
     }
     box.innerHTML = `<table class="ds-table">
-      <thead><tr><th>Página</th><th class="num">Nota</th><th>Concorrentes</th><th>Data</th><th></th></tr></thead>
+      <thead><tr><th>Página</th><th class="num">Nota</th><th>Concorrentes</th><th>Por</th><th>Data</th><th></th></tr></thead>
       <tbody>${rows
         .map(
           (r) => `<tr>
-            <td class="url" title="${esc(r.url)}"><a href="/r/${r.id}" data-nav="report">${esc(host(r.url))}${esc(pathOf(r.url))}</a></td>
+            <td class="url" title="${esc(r.url)}"><a href="/r/${r.id}" data-nav="report">${esc(host(r.url))}${esc(pathOf(r.url))}</a>${r.shared ? ' <i class="ph ph-link faint" title="Compartilhado com o cliente"></i>' : ''}</td>
             <td class="num">${r.overall ?? '<span class="dash">—</span>'}</td>
             <td>${r.competitors.length ? r.competitors.map((c) => `<span class="badge badge-neutral" title="${esc(c.url)}">${esc(host(c.url))}${c.overall != null ? ` · ${c.overall}` : ''}</span>`).join(' ') : '<span class="dash">—</span>'}</td>
+            <td>${r.author ? esc(r.author) : '<span class="dash">—</span>'}</td>
             <td style="white-space:nowrap">${dateBR(r.createdAt, true)}</td>
-            <td class="num"><button class="btn btn-danger-ghost btn-sm btn-icon" data-delete="${r.id}" aria-label="Excluir análise de ${esc(host(r.url))}"><i class="ph ph-trash"></i></button></td>
+            <td class="num">${ME?.role === 'admin' || r.createdBy === ME?.id ? `<button class="btn btn-danger-ghost btn-sm btn-icon" data-delete="${r.id}" aria-label="Excluir análise de ${esc(host(r.url))}"><i class="ph ph-trash"></i></button>` : ''}</td>
           </tr>`,
         )
         .join('')}</tbody></table>`;
@@ -141,11 +242,14 @@ const pathOf = (u) => { try { const p = new URL(u).pathname; return p === '/' ? 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-delete]');
   if (!b) return;
-  if (!confirm('Excluir esta análise? O link dela deixará de funcionar.')) return;
-  const res = await fetch(`/api/reports/${b.dataset.delete}`, { method: 'DELETE' });
-  if (res.ok) {
+  if (!confirm('Excluir esta análise? Os links dela deixarão de funcionar.')) return;
+  try {
+    await api(`/api/reports/${b.dataset.delete}`, { method: 'DELETE' });
     toast('Análise excluída');
-    loadHistory();
+    if (currentPath().startsWith('/r/')) go('/');
+    else loadHistory();
+  } catch (ex) {
+    toast(ex.message);
   }
 });
 
@@ -163,9 +267,7 @@ form.addEventListener('submit', async (e) => {
   }
   const competitors = ['c1', 'c2', 'c3'].map((n) => form[n].value.trim()).filter(Boolean);
   try {
-    const res = await fetch('/api/analyze', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url, competitors }) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Não foi possível iniciar a análise.');
+    const data = await api('/api/analyze', { method: 'POST', body: { url, competitors } });
     showProgress(1 + competitors.length);
     poll(data.id);
   } catch (ex) {
@@ -175,9 +277,7 @@ form.addEventListener('submit', async (e) => {
 });
 
 function showProgress(total) {
-  $('#start').hidden = true;
-  $('#report').hidden = true;
-  $('#progress').hidden = false;
+  show('progress');
   $('#progress-step').textContent = total > 1 ? `Analisando seu site e ${total - 1} concorrente(s)` : 'Analisando seu site';
   $('#progress-bar').style.width = '5%';
   window.scrollTo({ top: 0 });
@@ -190,9 +290,7 @@ async function poll(id) {
     tick++;
     let job;
     try {
-      const res = await fetch(`/api/jobs/${id}`);
-      job = await res.json();
-      if (!res.ok) throw new Error(job.error);
+      job = await api(`/api/jobs/${id}`);
     } catch (ex) {
       return fail(ex.message || 'Falha de conexão.');
     }
@@ -205,8 +303,7 @@ async function poll(id) {
       $('#progress-bar').style.width = `${Math.max(pct, Math.min(90, tick * 2))}%`;
     } else if (job.status === 'done') {
       $('#progress-bar').style.width = '100%';
-      history.pushState({}, '', `/r/${job.reportId}`);
-      return loadReport(job.reportId);
+      return go(`/r/${job.reportId}`);
     } else if (job.status === 'error') {
       return fail(job.error);
     }
@@ -214,6 +311,7 @@ async function poll(id) {
 }
 
 function fail(msg) {
+  if (!ME) return;
   showStart();
   const err = $('#form-error');
   err.textContent = msg;
@@ -221,20 +319,155 @@ function fail(msg) {
 }
 
 async function loadReport(id) {
-  $('#start').hidden = true;
-  $('#progress').hidden = true;
+  show('report');
   const el = $('#report');
-  el.hidden = false;
   el.innerHTML = '<div class="card"><div class="empty">Carregando relatório…</div></div>';
   try {
-    const res = await fetch(`/api/reports/${id}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    renderReport(data);
+    renderReport(await api(`/api/reports/${id}`));
   } catch (ex) {
+    if (!ME) return;
     el.innerHTML = `<div class="card"><div class="empty">${esc(ex.message || 'Relatório não encontrado.')}<br><br><a class="btn btn-secondary btn-sm" href="/" data-nav="home">Fazer uma nova análise</a></div></div>`;
   }
 }
+
+async function loadPublic(token) {
+  show('report');
+  renderUserMenu();
+  const el = $('#report');
+  el.innerHTML = '<div class="card"><div class="empty">Carregando relatório…</div></div>';
+  try {
+    renderReport(await api(`/api/public/${token}`));
+  } catch (ex) {
+    el.innerHTML = `<div class="card"><div class="empty"><i class="ph ph-link-break" style="font-size:28px"></i><br>${esc(ex.message)}</div></div>`;
+  }
+}
+
+// ---------- Equipe (admin) ----------
+async function showTeam() {
+  show('team');
+  document.title = 'Equipe · Raio-X do Site';
+  const box = $('#team-list');
+  box.innerHTML = '<div class="empty">Carregando…</div>';
+  try {
+    const users = await api('/api/users');
+    box.innerHTML = `<table class="ds-table">
+      <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Situação</th><th>Desde</th><th></th></tr></thead>
+      <tbody>${users
+        .map(
+          (u) => `<tr>
+            <td style="color:rgb(var(--c-ink));font-weight:500">${esc(u.name)}${u.id === ME.id ? ' <span class="badge badge-neutral">você</span>' : ''}</td>
+            <td>${esc(u.email)}</td>
+            <td>${u.role === 'admin' ? '<span class="badge badge-emerald">Administrador</span>' : '<span class="badge badge-neutral">Membro</span>'}</td>
+            <td>${u.disabled ? '<span class="badge badge-danger">Desativado</span>' : '<span class="badge badge-success">Ativo</span>'}</td>
+            <td style="white-space:nowrap">${dateBR(u.createdAt)}</td>
+            <td class="num" style="white-space:nowrap">${
+              u.id === ME.id
+                ? ''
+                : `<button class="btn btn-ghost btn-sm btn-icon" data-user-action="reset" data-id="${u.id}" data-name="${esc(u.name)}" title="Gerar nova senha" aria-label="Gerar nova senha para ${esc(u.name)}"><i class="ph ph-key"></i></button>
+                   <button class="btn btn-ghost btn-sm btn-icon" data-user-action="role" data-id="${u.id}" data-role="${u.role}" title="${u.role === 'admin' ? 'Tornar membro' : 'Tornar administrador'}" aria-label="${u.role === 'admin' ? 'Tornar membro' : 'Tornar administrador'}"><i class="ph ph-${u.role === 'admin' ? 'user' : 'shield-check'}"></i></button>
+                   <button class="btn btn-ghost btn-sm btn-icon" data-user-action="toggle" data-id="${u.id}" data-disabled="${u.disabled}" title="${u.disabled ? 'Reativar' : 'Desativar'}" aria-label="${u.disabled ? 'Reativar' : 'Desativar'} ${esc(u.name)}"><i class="ph ph-${u.disabled ? 'check-circle' : 'prohibit'}"></i></button>
+                   <button class="btn btn-danger-ghost btn-sm btn-icon" data-user-action="delete" data-id="${u.id}" data-name="${esc(u.name)}" title="Excluir" aria-label="Excluir ${esc(u.name)}"><i class="ph ph-trash"></i></button>`
+            }</td>
+          </tr>`,
+        )
+        .join('')}</tbody></table>`;
+  } catch (ex) {
+    box.innerHTML = `<div class="empty">${esc(ex.message)}</div>`;
+  }
+}
+
+const randomPassword = () => {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const buf = crypto.getRandomValues(new Uint32Array(12));
+  return [...buf].map((n) => chars[n % chars.length]).join('');
+};
+$('#gen-password').addEventListener('click', () => {
+  const f = $('#user-form');
+  f.password.value = randomPassword();
+  f.password.type = 'text';
+});
+
+$('#user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const err = $('#user-error');
+  err.hidden = true;
+  try {
+    const body = { name: f.name.value, email: f.email.value, password: f.password.value, role: f.role.value };
+    await api('/api/users', { method: 'POST', body });
+    showCredentials(body.name, body.email, body.password);
+    f.reset();
+    f.password.type = 'password';
+    showTeam();
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+  }
+});
+
+function showCredentials(name, email, password) {
+  const box = $('#credentials');
+  const url = DEMO ? 'https://seu-raio-x.onrender.com/' : location.origin + '/';
+  const text = `Olá, ${name.split(' ')[0]}! Seu acesso ao Raio-X do Site:\n${url}\nE-mail: ${email}\nSenha provisória: ${password}\nTroque a senha em "Minha conta" no primeiro acesso.`;
+  box.hidden = false;
+  $('#credentials-text').textContent = text;
+  $('#credentials-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(text); toast('Dados de acesso copiados'); } catch { prompt('Copie os dados de acesso:', text); }
+  };
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-user-action]');
+  if (!b) return;
+  const { id, name } = b.dataset;
+  try {
+    if (b.dataset.userAction === 'reset') {
+      const pw = randomPassword();
+      if (!confirm(`Gerar uma nova senha para ${name}? A senha atual deixará de funcionar.`)) return;
+      await api(`/api/users/${id}`, { method: 'PATCH', body: { password: pw } });
+      const u = (await api('/api/users')).find((x) => x.id === id);
+      showCredentials(u.name, u.email, pw);
+    } else if (b.dataset.userAction === 'role') {
+      await api(`/api/users/${id}`, { method: 'PATCH', body: { role: b.dataset.role === 'admin' ? 'member' : 'admin' } });
+    } else if (b.dataset.userAction === 'toggle') {
+      await api(`/api/users/${id}`, { method: 'PATCH', body: { disabled: b.dataset.disabled !== 'true' } });
+    } else if (b.dataset.userAction === 'delete') {
+      if (!confirm(`Excluir a conta de ${name}? As análises feitas por essa pessoa continuam salvas.`)) return;
+      await api(`/api/users/${id}`, { method: 'DELETE' });
+    }
+    showTeam();
+  } catch (ex) {
+    toast(ex.message);
+  }
+});
+
+// ---------- Minha conta ----------
+function showAccount() {
+  show('account');
+  document.title = 'Minha conta · Raio-X do Site';
+  $('#account-name').textContent = ME.name;
+  $('#account-email').textContent = ME.email;
+  $('#account-role').innerHTML = ME.role === 'admin' ? '<span class="badge badge-emerald">Administrador</span>' : '<span class="badge badge-neutral">Membro</span>';
+}
+$('#password-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const err = $('#password-error');
+  err.hidden = true;
+  if (f.password.value !== f.confirm.value) {
+    err.textContent = 'A confirmação não confere com a nova senha.';
+    err.hidden = false;
+    return;
+  }
+  try {
+    await api('/api/me/password', { method: 'POST', body: { current: f.current.value, password: f.password.value } });
+    f.reset();
+    toast('Senha alterada');
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+  }
+});
 
 // ---------- Relatório ----------
 let CATS = [];
@@ -260,7 +493,7 @@ function renderReport(data) {
     identitySection(main),
     detailSection(main, categories),
   ].join('');
-  wire(el, comparison, hist, data.id);
+  wire(el, comparison, hist, data);
   loadFontPreviews(main);
   window.scrollTo({ top: 0 });
 }
@@ -275,11 +508,27 @@ function gauge(score) {
     <div class="gauge-value"><div><b>${score ?? '–'}</b><span>de 100</span></div></div></div>`;
 }
 
+const absUrl = (p) => (DEMO ? `https://seu-raio-x.onrender.com${p}` : location.origin + p);
+function shareBoxHtml(shareUrl) {
+  if (!shareUrl) return '';
+  return `<div class="share-head"><i class="ph ph-share-network"></i><b>Link do cliente</b><span class="caption">Abre sem login, só leitura, apenas este relatório.</span></div>
+    <div class="share-row"><input class="input" readonly value="${esc(absUrl(shareUrl))}" aria-label="Link do cliente">
+    <button class="btn btn-sm btn-secondary" data-action="copy-share"><i class="ph ph-copy"></i>Copiar</button>
+    <button class="btn btn-sm btn-danger-ghost" data-action="revoke-share">Desativar link</button></div>`;
+}
+
 function headSection(r, data, previous) {
   const s = r.summary;
   const notices = [];
   if (!r.browser) notices.push('A análise com navegador real não estava disponível; métricas de velocidade, fontes e cores ficaram limitadas.');
-  if (!r.pagespeed) notices.push('Configure uma chave do Google PageSpeed (PAGESPEED_API_KEY) para incluir a nota oficial do Google e dados de usuários reais.');
+  if (!r.pagespeed && !data.public) notices.push('Configure uma chave do Google PageSpeed (PAGESPEED_API_KEY) para incluir a nota oficial do Google e dados de usuários reais.');
+  const actions = data.public
+    ? `<button class="btn btn-sm btn-secondary" data-action="print"><i class="ph ph-file-pdf"></i>Salvar em PDF</button>`
+    : `<button class="btn btn-sm shiny-cta" data-action="share-client"><span class="shiny-dots" aria-hidden="true"></span><span class="shiny-cta-content"><i class="ph ph-share-network"></i>Compartilhar com o cliente</span></button>
+       <button class="btn btn-sm btn-secondary" data-action="print"><i class="ph ph-file-pdf"></i>Salvar em PDF</button>
+       <button class="btn btn-sm btn-ghost" data-action="copy-internal"><i class="ph ph-link"></i>Link interno</button>
+       <a class="btn btn-sm btn-ghost" href="/" data-nav="home"><i class="ph ph-plus"></i>Nova análise</a>
+       ${data.canDelete ? `<button class="btn btn-sm btn-danger-ghost" data-delete="${data.id}"><i class="ph ph-trash"></i>Excluir</button>` : ''}`;
   const delta = previous && r.score.overall != null && previous.overall != null ? r.score.overall - previous.overall : null;
   return `<section class="card">
     <div class="report-head">
@@ -287,7 +536,7 @@ function headSection(r, data, previous) {
         <span class="eyebrow">Raio-X da página</span>
         <div class="report-url"><i class="ph ph-globe"></i>${esc(r.finalUrl)}</div>
         <h1 style="margin:0">${esc(host(r.finalUrl))}</h1>
-        <div class="caption" style="margin-top:4px">Analisado em ${dateBR(data.createdAt, true)}</div>
+        <div class="caption" style="margin-top:4px">Analisado em ${dateBR(data.createdAt, true)}${data.author ? ` por ${esc(data.author)}` : ''}</div>
         <div class="score-row">
           ${gauge(r.score.overall)}
           <div class="score-meta">
@@ -301,11 +550,8 @@ function headSection(r, data, previous) {
           </div>
         </div>
         <ul class="summary-list">${s.text.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
-        <div class="actions">
-          <button class="btn btn-sm shiny-cta" data-action="share"><span class="shiny-dots" aria-hidden="true"></span><span class="shiny-cta-content"><i class="ph ph-link"></i>Copiar link do relatório</span></button>
-          <button class="btn btn-sm btn-secondary" data-action="print"><i class="ph ph-file-pdf"></i>Salvar em PDF</button>
-          <a class="btn btn-sm btn-ghost" href="/" data-nav="home"><i class="ph ph-plus"></i>Nova análise</a>
-        </div>
+        <div class="actions">${actions}</div>
+        ${data.public ? '' : `<div id="share-box" class="share-box no-print" ${data.shareUrl ? '' : 'hidden'}>${shareBoxHtml(data.shareUrl)}</div>`}
         ${notices.map((n) => `<div class="notice no-print"><i class="ph ph-info"></i><span>${esc(n)}</span></div>`).join('')}
       </div>
       <div class="shots">
@@ -530,7 +776,8 @@ function detailSection(r, categories) {
   return `<section class="card" id="detalhes"><div class="card-title"><h2>Análise detalhada</h2></div><div class="tabs" role="tablist">${tabs}</div>${panels}</section>`;
 }
 
-function wire(root, cmp, hist, currentId) {
+function wire(root, cmp, hist, data) {
+  const currentId = data.id;
   const selectTab = (id) => {
     $$('.tab[data-tab]', root).forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === id)));
     $$('.tab-panel', root).forEach((p) => (p.hidden = p.dataset.panel !== id));
@@ -549,16 +796,42 @@ function wire(root, cmp, hist, currentId) {
     }),
   );
   $$('[data-action="print"]', root).forEach((b) => b.addEventListener('click', () => window.print()));
-  $$('[data-action="share"]', root).forEach((b) =>
+  const copy = async (text, msg) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(msg);
+    } catch {
+      prompt('Copie o link:', text);
+    }
+  };
+  $$('[data-action="copy-internal"]', root).forEach((b) => b.addEventListener('click', () => copy(absUrl(`/r/${currentId}`), 'Link interno copiado (exige login)')));
+  const box = $('#share-box', root);
+  $$('[data-action="share-client"]', root).forEach((b) =>
     b.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(location.href);
-        toast('Link copiado');
-      } catch {
-        prompt('Copie o link do relatório:', location.href);
+        const { shareUrl } = await api(`/api/reports/${currentId}/share`, { method: 'POST' });
+        box.innerHTML = shareBoxHtml(shareUrl);
+        box.hidden = false;
+        copy(absUrl(shareUrl), 'Link do cliente copiado');
+      } catch (ex) {
+        toast(ex.message);
       }
     }),
   );
+  box?.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-action="copy-share"]')) copy($('input', box).value, 'Link do cliente copiado');
+    if (e.target.closest('[data-action="revoke-share"]')) {
+      if (!confirm('Desativar o link? Quem tiver o endereço não conseguirá mais abrir o relatório.')) return;
+      try {
+        await api(`/api/reports/${currentId}/share`, { method: 'DELETE' });
+        box.hidden = true;
+        box.innerHTML = '';
+        toast('Link desativado');
+      } catch (ex) {
+        toast(ex.message);
+      }
+    }
+  });
   // Gráficos desenhados na largura real (texto fica no tamanho do sistema) e refeitos ao redimensionar
   const draw = () => {
     if (cmp) drawComparisonChart($('#cmp-chart'), cmp);
@@ -698,8 +971,7 @@ function drawEvolutionChart(container, hist, currentId) {
     });
     hEl.addEventListener('click', () => {
       if (h.id === currentId) return;
-      history.pushState({}, '', `/r/${h.id}`);
-      loadReport(h.id);
+      go(`/r/${h.id}`);
     });
   });
 }

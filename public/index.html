@@ -29,14 +29,49 @@
         Raio-X do Site
       </a>
       <nav class="nav-actions">
-        <a class="btn btn-ghost btn-sm" href="/#historico" data-nav="history"><i class="ph ph-clock-counter-clockwise"></i><span>Histórico</span></a>
+        <span id="nav-app" class="nav-actions" hidden>
+          <a class="btn btn-ghost btn-sm" href="/" data-nav="home"><i class="ph ph-plus"></i><span class="hide-sm">Nova análise</span></a>
+          <a class="btn btn-ghost btn-sm" href="/#historico" data-nav="history"><i class="ph ph-clock-counter-clockwise"></i><span class="hide-sm">Histórico</span></a>
+        </span>
         <button class="btn btn-ghost btn-icon" id="theme-toggle" type="button" aria-label="Alternar tema"><i class="ph ph-moon"></i></button>
+        <details id="user-menu" class="user-menu" hidden>
+          <summary class="btn btn-ghost btn-sm" aria-label="Menu da conta"><span id="user-initials" class="avatar"></span><span id="user-name" class="hide-sm"></span><i class="ph ph-caret-down"></i></summary>
+          <div class="menu-panel" role="menu">
+            <div class="menu-who"><b id="user-full"></b><span id="user-email" class="caption"></span></div>
+            <a href="/equipe" data-nav="team" id="menu-team" role="menuitem"><i class="ph ph-users"></i>Equipe</a>
+            <a href="/conta" data-nav="account" role="menuitem"><i class="ph ph-user-circle"></i>Minha conta</a>
+            <button type="button" id="logout" role="menuitem"><i class="ph ph-sign-out"></i>Sair</button>
+          </div>
+        </details>
       </nav>
     </div>
   </header>
 
   <main class="container">
-    <section id="start">
+    <section id="login" class="auth" hidden>
+      <form id="login-form" class="premium-card auth-card" novalidate>
+        <span class="eyebrow">Raio-X do site</span>
+        <h1>Entrar</h1>
+        <p class="mute body-sm" style="margin-top:-4px">Use o e-mail e a senha que o administrador cadastrou para você.</p>
+        <label class="field">
+          <span class="field-label">E-mail</span>
+          <span class="input-wrap"><i class="ph ph-envelope-simple"></i><input id="login-email" class="input" type="email" autocomplete="username" required></span>
+        </label>
+        <label class="field">
+          <span class="field-label">Senha</span>
+          <span class="input-wrap"><i class="ph ph-lock"></i><input id="login-password" class="input" type="password" autocomplete="current-password" required></span>
+        </label>
+        <button class="btn btn-lg shiny-cta" type="submit" style="width:100%">
+          <span class="shiny-dots" aria-hidden="true"></span>
+          <span class="shiny-cta-content">Entrar <i class="ph ph-arrow-right btn-icon-slide"></i></span>
+        </button>
+        <p id="login-error" class="form-error" role="alert" hidden></p>
+        <p id="login-setup" class="notice" hidden><i class="ph ph-info"></i><span>Nenhuma conta cadastrada ainda. Defina <code>ADMIN_EMAIL</code> e <code>ADMIN_PASSWORD</code> nas variáveis do servidor e reinicie para criar o administrador.</span></p>
+        <p class="caption" style="margin:0">Esqueceu a senha? Peça ao administrador para gerar uma nova.</p>
+      </form>
+    </section>
+
+    <section id="start" hidden>
       <div class="hero">
         <span class="eyebrow">Raio-X do site</span>
         <h1>Descubra o que está fazendo seu site <span class="hover-text-shine">perder clientes</span></h1>
@@ -91,6 +126,57 @@
     </section>
 
     <div id="report" class="report ds-app" hidden></div>
+
+    <section id="team" class="ds-app page" hidden>
+      <div class="page-head"><span class="eyebrow">Administração</span><h1>Equipe</h1><p class="mute">Só o administrador cadastra contas. Cada pessoa entra com o próprio e-mail e senha; todos veem o histórico de análises da equipe.</p></div>
+      <div class="team-grid">
+        <div>
+          <div id="team-list" class="table-wrap"></div>
+          <div id="credentials" class="card credentials" hidden>
+            <div class="card-title"><h3 style="margin:0">Dados de acesso</h3><button class="btn btn-sm btn-secondary" id="credentials-copy" type="button"><i class="ph ph-copy"></i>Copiar</button></div>
+            <pre id="credentials-text" class="mono"></pre>
+            <p class="caption" style="margin:0">Envie para a pessoa por um canal privado. Esta senha não será mostrada de novo.</p>
+          </div>
+        </div>
+        <form id="user-form" class="card" novalidate style="margin:0">
+          <h3>Adicionar pessoa</h3>
+          <div class="form-stack">
+            <label class="field"><span class="field-label">Nome</span><input name="name" class="input input-plain" required autocomplete="off"></label>
+            <label class="field"><span class="field-label">E-mail</span><input name="email" class="input input-plain" type="email" required autocomplete="off"></label>
+            <label class="field"><span class="field-label">Senha provisória</span>
+              <span class="row-input"><input name="password" class="input input-plain" type="password" minlength="8" required autocomplete="new-password"><button class="btn btn-sm btn-ghost" type="button" id="gen-password">Gerar</button></span>
+            </label>
+            <label class="field"><span class="field-label">Papel</span>
+              <select name="role" class="input input-plain select"><option value="member">Membro — faz e vê análises</option><option value="admin">Administrador — também gerencia a equipe</option></select>
+            </label>
+            <button class="btn shiny-cta" type="submit"><span class="shiny-dots" aria-hidden="true"></span><span class="shiny-cta-content"><i class="ph ph-user-plus"></i>Criar conta</span></button>
+            <p id="user-error" class="form-error" role="alert" hidden></p>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="account" class="ds-app page" hidden>
+      <div class="page-head"><span class="eyebrow">Conta</span><h1>Minha conta</h1></div>
+      <div class="team-grid">
+        <div class="card" style="margin:0">
+          <h3>Seus dados</h3>
+          <dl class="kv"><dt>Nome</dt><dd id="account-name"></dd><dt>E-mail</dt><dd id="account-email"></dd><dt>Papel</dt><dd id="account-role"></dd></dl>
+          <p class="caption">Para mudar nome ou e-mail, fale com um administrador.</p>
+        </div>
+        <form id="password-form" class="card" novalidate style="margin:0">
+          <h3>Trocar senha</h3>
+          <div class="form-stack">
+            <label class="field"><span class="field-label">Senha atual</span><input name="current" class="input input-plain" type="password" autocomplete="current-password" required></label>
+            <label class="field"><span class="field-label">Nova senha</span><input name="password" class="input input-plain" type="password" autocomplete="new-password" minlength="8" required></label>
+            <label class="field"><span class="field-label">Confirmar nova senha</span><input name="confirm" class="input input-plain" type="password" autocomplete="new-password" required></label>
+            <button class="btn btn-secondary" type="submit"><i class="ph ph-lock-key"></i>Salvar nova senha</button>
+            <p id="password-error" class="form-error" role="alert" hidden></p>
+            <p class="caption" style="margin:0">Ao trocar a senha, você sai dos outros dispositivos.</p>
+          </div>
+        </form>
+      </div>
+    </section>
   </main>
 
   <footer class="container footer">

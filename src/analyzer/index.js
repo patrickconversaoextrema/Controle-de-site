@@ -123,13 +123,14 @@ export async function analyzeWithCompetitors(mainUrl, competitorUrls = [], onPro
       onProgress({ site: u, index: i, step: 'Concluído', done, total });
     }
   };
-  // O principal primeiro; concorrentes em paralelo (2 por vez) para não sobrecarregar.
+  // O principal primeiro; concorrentes em paralelo (2 por vez, ou 1 com LOW_MEMORY=1).
   const main = await run(urls[0], 0);
   if (main.error) throw new Error(main.error);
   const competitors = [];
   const rest = urls.slice(1);
-  for (let i = 0; i < rest.length; i += 2) {
-    competitors.push(...(await Promise.all(rest.slice(i, i + 2).map((u, j) => run(u, i + j + 1)))));
+  const step = process.env.LOW_MEMORY === '1' ? 1 : 2;
+  for (let i = 0; i < rest.length; i += step) {
+    competitors.push(...(await Promise.all(rest.slice(i, i + step).map((u, j) => run(u, i + j + 1)))));
   }
   return { main, competitors, comparison: compareSites(main, competitors), categories: CATEGORIES };
 }

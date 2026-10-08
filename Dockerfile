@@ -7,17 +7,15 @@ RUN apt-get update \
 
 ENV CHROME_PATH=/usr/bin/chromium \
     NODE_ENV=production \
-    PORT=3000
+    PORT=3000 \
+    DATA_DIR=/app/data
 
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
-# Relatórios salvos (SQLite + imagens). Monte um volume aqui para não perder dados.
-RUN mkdir -p /app/data && chown node:node /app/data
-VOLUME ["/app/data"]
-ENV DATA_DIR=/app/data
 
+# Relatórios salvos (SQLite + imagens). Monte um disco/volume em /app/data.
+RUN mkdir -p /app/data && chmod +x docker-entrypoint.sh
 EXPOSE 3000
-USER node
-CMD ["node", "server.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

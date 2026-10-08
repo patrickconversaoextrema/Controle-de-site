@@ -34,7 +34,7 @@ async function getBrowser() {
         }
       });
       try {
-        return await chromium.launch({ headless: true, executablePath, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+        return await chromium.launch({ headless: true, executablePath, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', ...(process.env.LOW_MEMORY === '1' ? ['--renderer-process-limit=2', '--js-flags=--max-old-space-size=256'] : [])] });
       } catch (err) {
         console.warn('[browser] Chromium indisponível:', err.message.split('\n')[0]);
         return null;

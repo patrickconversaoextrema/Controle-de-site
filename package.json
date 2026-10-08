@@ -8,7 +8,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:browser": "TEST_BROWSER=1 node --test \"test/**/*.test.js\""
+    "test:browser": "TEST_BROWSER=1 node --test \"test/**/*.test.js\"",
+    "demo": "node scripts/build-demo.mjs"
   },
   "engines": {
     "node": ">=20"

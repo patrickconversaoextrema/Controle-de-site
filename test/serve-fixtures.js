@@ -13,6 +13,7 @@ export function startFixtureServer(port = 0) {
     let p = url.pathname;
     if (p === '/' || p.startsWith('/ruim')) p = '/ruim.html';
     if (p.startsWith('/boa')) p = '/boa.html';
+    if (p.startsWith('/media')) p = '/media.html';
     if (['/contato', '/agendar', '/privacidade', '/og.jpg', '/favicon.ico'].includes(p)) { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('ok'); }
     if (p === '/foto-grande.png') {
       // PNG "pesado" fictício: 1x1 válido seguido de bytes de preenchimento.
