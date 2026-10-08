@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raio-X do Site</title>
+  <meta name="description" content="Análise completa de sites e landing pages: velocidade, erros, SEO, imagens, fontes, cores, conversão e comparação com concorrentes.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="/"><span class="brand-mark">RX</span> Raio-X do Site</a>
+      <span class="topbar-note">Análise completa de sites e landing pages</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="start" class="card start">
+      <h1>Descubra o que está fazendo seu site perder clientes</h1>
+      <p class="lead">Cole o endereço da página e, se quiser, de até 3 concorrentes. Analisamos velocidade, erros, SEO, imagens, fontes, cores, celular e conversão — e dizemos exatamente o que mudar.</p>
+      <form id="form" novalidate>
+        <label class="field">
+          <span>Seu site ou landing page</span>
+          <input id="url" name="url" type="text" inputmode="url" placeholder="https://www.seusite.com.br" autocomplete="url" required>
+        </label>
+        <fieldset class="competitors">
+          <legend>Concorrentes <small>(opcional)</small></legend>
+          <input name="c1" type="text" inputmode="url" placeholder="https://concorrente-1.com.br">
+          <input name="c2" type="text" inputmode="url" placeholder="https://concorrente-2.com.br">
+          <input name="c3" type="text" inputmode="url" placeholder="https://concorrente-3.com.br">
+        </fieldset>
+        <button class="btn-primary" type="submit">Analisar agora</button>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+      </form>
+      <ul class="features">
+        <li>⚡ Velocidade real no celular e desktop</li>
+        <li>🐞 Erros, links e imagens quebradas</li>
+        <li>🔤 Fontes e combinações</li>
+        <li>🎨 Paleta, contraste e destaque do botão</li>
+        <li>🎯 Elementos de conversão</li>
+        <li>🏁 Comparação com concorrentes</li>
+      </ul>
+    </section>
+
+    <section id="progress" class="card progress" hidden aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <h2>Analisando…</h2>
+      <p id="progress-step" class="muted">Preparando</p>
+      <div class="bar"><div id="progress-bar"></div></div>
+      <p class="muted small">Abrimos a página em um navegador real (desktop e celular). Leva de 20 a 90 segundos por site.</p>
+    </section>
+
+    <div id="report" hidden></div>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Raio-X do Site · Os resultados são estimativas automáticas; valide as mudanças com testes reais.</p>
+  </footer>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

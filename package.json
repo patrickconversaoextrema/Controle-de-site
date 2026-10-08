@@ -1,0 +1,25 @@
+{
+  "name": "analisador-de-site",
+  "version": "1.0.0",
+  "description": "Analisador completo de sites e landing pages: velocidade, erros, SEO, imagens, fontes, cores, conversão e comparação com concorrentes.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:browser": "TEST_BROWSER=1 node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.21.2"
+  },
+  "optionalDependencies": {
+    "playwright-core": "^1.56.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
