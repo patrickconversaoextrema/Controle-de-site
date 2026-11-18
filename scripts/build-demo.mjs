@@ -42,7 +42,12 @@ const users = [
   { id: 'u-admin', name: 'Patrick', email: 'patrick@conversaoextrema.com.br', role: 'admin', disabled: false, createdAt: '2026-10-08T12:00:00Z' },
   { id: 'u-maria', name: 'Maria Souza (exemplo)', email: 'maria@exemplo.com', role: 'member', disabled: false, createdAt: '2026-10-08T12:30:00Z' },
 ];
-const data = { start: '/', reports, list, users };
+const aiProviders = { anthropic: { label: 'Anthropic (Claude)', keyHint: 'sk-ant-…' }, openai: { label: 'OpenAI (ChatGPT)', keyHint: 'sk-…' } };
+const ai = {
+  user: null,
+  team: { provider: 'anthropic', providerLabel: 'Anthropic (Claude)', model: 'claude-sonnet-5-5', keyMask: 'sk-ant-…x9Qa', updatedAt: '2026-11-18T12:00:00Z', updatedBy: 'Patrick' },
+};
+const data = { start: '/', reports, list, users, ai, aiProviders };
 
 // Fontes e ícones como arquivos ao lado da página
 fs.copyFileSync(path.join(root, 'node_modules/@phosphor-icons/web/src/regular/Phosphor.woff2'), path.join(outDir, 'vendor/Phosphor.woff2'));
@@ -55,7 +60,7 @@ css += '\n/* demonstração */\n[data-action="print"] { display: none !important
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const bodyInner = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>'))
   .replace('<script src="/app.js" type="module"></script>', '')
-  .replace('<div class="dot-grid" aria-hidden="true"></div>', '<div class="dot-grid" aria-hidden="true"></div>\n  <div class="demo-ribbon">Demonstração com páginas e resultados de busca de exemplo. Entre com o e-mail já preenchido e qualquer senha. Análises novas funcionam só no site hospedado.</div>');
+  .replace('<div class="dot-grid" aria-hidden="true"></div>', '<div class="dot-grid" aria-hidden="true"></div>\n  <div class="demo-ribbon">Demonstração com páginas, busca e diagnóstico de IA de exemplo. Entre com o e-mail já preenchido e qualquer senha. Análises novas funcionam só no site hospedado.</div>');
 
 const page = `<title>Raio-X do Site</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">

@@ -33,7 +33,35 @@
     if (!me) return json({ error: 'Faça login para continuar.' }, 401);
 
     if (path === '/api/me/password') return body.current ? json({ ok: true }) : json({ error: 'Senha atual incorreta.' }, 400);
-    if (path === '/api/config') return json({ search: 'serper' });
+    if (path === '/api/config') {
+      const a = D.ai.user || D.ai.team;
+      return json({ search: 'serper', ai: a ? { configured: true, source: D.ai.user ? 'user' : 'team', provider: a.provider, providerLabel: a.providerLabel, model: a.model } : { configured: false } });
+    }
+    if (path === '/api/ai' && method === 'GET') {
+      return json({ user: D.ai.user, team: D.ai.team, active: D.ai.user ? 'user' : D.ai.team ? 'team' : null, canEditTeam: me.role === 'admin', providers: D.aiProviders });
+    }
+    if (path === '/api/ai/test' || (path === '/api/ai' && method === 'PUT')) {
+      const models = body.provider === 'openai' ? ['gpt-5', 'gpt-5-mini', 'gpt-4.1'] : ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'];
+      const saved = D.ai[body.scope];
+      if (!body.apiKey && !(saved && saved.provider === body.provider)) return json({ error: 'Cole a chave de API.' }, 400);
+      if (body.apiKey && body.apiKey.length < 20) return json({ error: 'Cole a chave de API completa.' }, 400);
+      if (path === '/api/ai/test') return json({ models, defaultModel: models[0] });
+      const k = body.apiKey || '';
+      D.ai[body.scope] = {
+        provider: body.provider,
+        providerLabel: D.aiProviders[body.provider].label,
+        model: models.includes(body.model) ? body.model : models[0],
+        keyMask: k ? `${k.slice(0, k.startsWith('sk-ant-') ? 7 : 3)}…${k.slice(-4)}` : saved.keyMask,
+        updatedAt: new Date().toISOString(),
+        updatedBy: me.name,
+      };
+      return json({ saved: D.ai[body.scope], models });
+    }
+    if (path === '/api/ai' && method === 'DELETE') { D.ai[q.get('scope')] = null; return json(null, 204); }
+    if ((m = path.match(/^\/api\/reports\/([^/]+)\/ai$/))) {
+      await new Promise((r) => setTimeout(r, 1500));
+      return json({ ai: D.reports[m[1]].ai });
+    }
     if (path === '/api/analyze') return json({ error: 'Esta é uma demonstração: as análises e a busca de concorrentes rodam no servidor. Abra um dos relatórios do histórico abaixo.' }, 400);
     if (path === '/api/reports') {
       const term = (q.get('q') || '').toLowerCase();
