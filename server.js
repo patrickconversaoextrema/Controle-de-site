@@ -7,6 +7,8 @@ import { browserAvailable, closeBrowser } from './src/analyzer/browser.js';
 import { normalizeUrl } from './src/utils/url.js';
 import { openStore } from './src/store.js';
 import { searchProvider } from './src/analyzer/competitors.js';
+import { PROVIDERS, listModels, pickDefaultModel, generateDiagnosis } from './src/ai.js';
+import { encrypt, decrypt, maskKey, masterKey } from './src/secrets.js';
 import {
   SESSION_COOKIE, SESSION_TTL_MS, hashPassword, checkLogin, verifyPassword, validatePassword, validEmail,
   parseCookies, sessionCookie, createRateLimiter, ensureAdmin,
@@ -22,6 +24,7 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
 const INDEX = path.join(__dirname, 'public', 'index.html');
 
 const store = openStore();
+masterKey(); // cria a chave-mestra de cifragem na primeira execução
 ensureAdmin(store);
 setInterval(() => store.purgeExpiredSessions(), 6 * 60 * 60 * 1000).unref();
 const loginLimiter = createRateLimiter({ max: 8, windowMs: 15 * 60 * 1000 });
@@ -100,8 +103,106 @@ app.post('/api/me/password', requireAuth, (req, res) => {
 });
 
 // ---------- Equipe (admin) ----------
+// ---------- Inteligência artificial (chave da pessoa ou da equipe) ----------
+const TEAM_AI = 'ai.team';
+const storedAi = (scope, userId) => (scope === 'team' ? store.getSetting(TEAM_AI) : store.getUserAi(userId));
+const saveAi = (scope, userId, cfg) => (scope === 'team' ? store.setSetting(TEAM_AI, cfg) : store.setUserAi(userId, cfg));
+
+/** Configuração em uso: a da pessoa tem prioridade sobre a da equipe. */
+function resolveAi(userId) {
+  for (const scope of ['user', 'team']) {
+    const cfg = storedAi(scope, userId);
+    if (!cfg?.key) continue;
+    try {
+      return { provider: cfg.provider, model: cfg.model, apiKey: decrypt(cfg.key), source: scope };
+    } catch {
+      console.warn(`[ai] não foi possível ler a chave (${scope}); a SECRET_KEY mudou?`);
+    }
+  }
+  return null;
+}
+
+function publicAi(cfg) {
+  if (!cfg?.key) return null;
+  return { provider: cfg.provider, providerLabel: PROVIDERS[cfg.provider]?.label, model: cfg.model, keyMask: cfg.mask, updatedAt: cfg.updatedAt, updatedBy: cfg.updatedBy || null };
+}
+
+const scopeOf = (req, res) => {
+  const scope = req.body?.scope || req.query.scope;
+  if (scope !== 'user' && scope !== 'team') {
+    res.status(400).json({ error: 'Escolha se a chave é sua ou da equipe.' });
+    return null;
+  }
+  if (scope === 'team' && req.user.role !== 'admin') {
+    res.status(403).json({ error: 'Só administradores alteram a chave da equipe.' });
+    return null;
+  }
+  return scope;
+};
+
+app.get('/api/ai', requireAuth, (req, res) => {
+  const active = resolveAi(req.user.id);
+  res.json({
+    user: publicAi(storedAi('user', req.user.id)),
+    team: publicAi(storedAi('team')),
+    active: active ? active.source : null,
+    canEditTeam: req.user.role === 'admin',
+    providers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, { label: v.label, keyHint: v.keyHint }])),
+  });
+});
+
+// Testa a chave (nova ou a já salva) e lista os modelos da conta
+app.post('/api/ai/test', requireAuth, async (req, res) => {
+  const scope = scopeOf(req, res);
+  if (!scope) return;
+  const provider = String(req.body?.provider || '');
+  let apiKey = String(req.body?.apiKey || '').trim();
+  if (!apiKey) {
+    const saved = storedAi(scope, req.user.id);
+    if (saved?.key && saved.provider === provider) apiKey = decrypt(saved.key);
+  }
+  try {
+    const models = await listModels(provider, apiKey);
+    res.json({ models, defaultModel: pickDefaultModel(provider, models) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/ai', requireAuth, async (req, res) => {
+  const scope = scopeOf(req, res);
+  if (!scope) return;
+  const provider = String(req.body?.provider || '');
+  const model = String(req.body?.model || '').trim();
+  let apiKey = String(req.body?.apiKey || '').trim();
+  const saved = storedAi(scope, req.user.id);
+  if (!PROVIDERS[provider]) return res.status(400).json({ error: 'Escolha Anthropic ou OpenAI.' });
+  if (!apiKey && saved?.key && saved.provider === provider) apiKey = decrypt(saved.key);
+  if (!apiKey) return res.status(400).json({ error: 'Cole a chave de API.' });
+  let models;
+  try {
+    models = await listModels(provider, apiKey);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const chosen = model && models.includes(model) ? model : pickDefaultModel(provider, models);
+  if (!chosen) return res.status(400).json({ error: 'Nenhum modelo de texto disponível nesta conta.' });
+  saveAi(scope, req.user.id, { provider, model: chosen, key: encrypt(apiKey), mask: maskKey(apiKey), updatedAt: new Date().toISOString(), updatedBy: req.user.name });
+  res.json({ saved: publicAi(storedAi(scope, req.user.id)), models });
+});
+
+app.delete('/api/ai', requireAuth, (req, res) => {
+  const scope = scopeOf(req, res);
+  if (!scope) return;
+  saveAi(scope, req.user.id, null);
+  res.status(204).end();
+});
+
 // O que a interface precisa saber sobre o servidor
-app.get('/api/config', requireAuth, (_req, res) => res.json({ search: searchProvider() }));
+app.get('/api/config', requireAuth, (req, res) => {
+  const ai = resolveAi(req.user.id);
+  res.json({ search: searchProvider(), ai: ai ? { configured: true, source: ai.source, provider: ai.provider, providerLabel: PROVIDERS[ai.provider].label, model: ai.model } : { configured: false } });
+});
 
 app.get('/api/users', requireAdmin, (_req, res) => res.json(store.listUsers()));
 
@@ -184,6 +285,15 @@ function pump() {
     analyzeWithCompetitors(job.main, job.competitors, (p) => {
       job.progress = p;
     }, { niche: job.niche })
+      .then(async (raw) => {
+        job.progress = { ...(job.progress || {}), site: job.main, step: `Escrevendo o diagnóstico com ${PROVIDERS[job.ai.provider].label}`, done: job.progress?.total || 1, total: job.progress?.total || 1 };
+        try {
+          raw.ai = await generateDiagnosis(job.ai, raw);
+        } catch (err) {
+          raw.aiError = err.message;
+        }
+        return raw;
+      })
       .then((raw) => {
         const images = [];
         const result = extractImages(raw, job.id, images);
@@ -197,6 +307,7 @@ function pump() {
       .finally(() => {
         running--;
         job.finishedAt = Date.now();
+        job.ai = null; // não mantém a chave na memória do job
         pump();
       });
   }
@@ -223,11 +334,13 @@ app.post('/api/analyze', requireAuth, (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
+  const ai = resolveAi(req.user.id);
+  if (!ai) return res.status(400).json({ code: 'ai_required', error: 'Para analisar, cadastre uma chave de API da Anthropic ou da OpenAI em Inteligência artificial.' });
   if (!comps.length && !niche) return res.status(400).json({ error: 'Informe o nicho para encontrarmos os concorrentes, ou digite os concorrentes manualmente.' });
   if (!comps.length && !searchProvider()) return res.status(400).json({ error: 'A busca automática de concorrentes não está configurada no servidor. Informe os concorrentes manualmente ou peça ao administrador para configurar a SERPER_API_KEY.' });
   if (queue.length > 20) return res.status(503).json({ error: 'Muitas análises na fila. Tente novamente em instantes.' });
   const id = crypto.randomUUID();
-  const job = { id, main, competitors: comps, niche: comps.length ? '' : niche, status: 'queued', createdAt: Date.now(), progress: null, userId: req.user.id };
+  const job = { id, main, competitors: comps, niche: comps.length ? '' : niche, status: 'queued', createdAt: Date.now(), progress: null, userId: req.user.id, ai };
   jobs.set(id, job);
   queue.push(job);
   pump();
@@ -275,6 +388,35 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
   res.status(204).end();
 });
 
+// Refaz o diagnóstico da IA de um relatório salvo (com a chave de quem pediu)
+const aiRunning = new Set();
+app.post('/api/reports/:id/ai', requireAuth, async (req, res) => {
+  const rep = ID_RE.test(req.params.id) ? store.get(req.params.id) : null;
+  if (!rep) return res.status(404).json({ error: 'Relatório não encontrado.' });
+  const ai = resolveAi(req.user.id);
+  if (!ai) return res.status(400).json({ code: 'ai_required', error: 'Cadastre uma chave de API da Anthropic ou da OpenAI em Inteligência artificial.' });
+  if (aiRunning.has(rep.id)) return res.status(409).json({ error: 'O diagnóstico deste relatório já está sendo gerado.' });
+  aiRunning.add(rep.id);
+  try {
+    // As capturas salvas voltam a ser imagens para a IA ver
+    const toData = (u) => {
+      const m = /\/img\/(\d+)$/.exec(u || '');
+      const img = m ? store.image(rep.id, Number(m[1])) : null;
+      return img ? `data:${img.type};base64,${Buffer.from(img.data).toString('base64')}` : null;
+    };
+    const withShots = (site) => site && { ...site, screenshots: { desktop: toData(site.screenshots?.desktop), mobile: toData(site.screenshots?.mobile) } };
+    const analysis = { ...rep.result, main: withShots(rep.result.main), competitors: (rep.result.competitors || []).map(withShots) };
+    const diagnosis = await generateDiagnosis(ai, analysis);
+    const { aiError, ...rest } = rep.result;
+    store.updateResult(rep.id, { ...rest, ai: diagnosis });
+    res.json({ ai: diagnosis });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  } finally {
+    aiRunning.delete(rep.id);
+  }
+});
+
 // Link público de leitura para o cliente
 app.post('/api/reports/:id/share', requireAuth, (req, res) => {
   const rep = ID_RE.test(req.params.id) ? store.get(req.params.id) : null;
@@ -314,7 +456,7 @@ function sendImage(res, id, n) {
 }
 
 // Rotas da interface (a própria página decide o que mostrar)
-for (const route of ['/r/:id', '/p/:token', '/login', '/equipe', '/conta']) app.get(route, (_req, res) => res.sendFile(INDEX));
+for (const route of ['/r/:id', '/p/:token', '/login', '/equipe', '/conta', '/ia']) app.get(route, (_req, res) => res.sendFile(INDEX));
 
 // Verificação de saúde (usada pelo Render) — leve, não abre o navegador
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

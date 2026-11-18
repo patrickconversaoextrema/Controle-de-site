@@ -39,6 +39,7 @@
           <div class="menu-panel" role="menu">
             <div class="menu-who"><b id="user-full"></b><span id="user-email" class="caption"></span></div>
             <a href="/equipe" data-nav="team" id="menu-team" role="menuitem"><i class="ph ph-users"></i>Equipe</a>
+            <a href="/ia" data-nav="ai" role="menuitem"><i class="ph ph-sparkle"></i>Inteligência artificial</a>
             <a href="/conta" data-nav="account" role="menuitem"><i class="ph ph-user-circle"></i>Minha conta</a>
             <button type="button" id="logout" role="menuitem"><i class="ph ph-sign-out"></i>Sair</button>
           </div>
@@ -77,6 +78,14 @@
         <h1>Descubra o que está fazendo seu site <span class="hover-text-shine">perder clientes</span></h1>
         <p class="lead">Informe o site e o nicho. Encontramos os concorrentes no Google e comparamos velocidade, erros, SEO, imagens, fontes, cores e conversão, com um plano do que mudar.</p>
 
+        <div id="ai-required" class="analyze-form premium-card ai-required" hidden>
+          <div class="icon-seal"><i class="ph ph-sparkle"></i></div>
+          <div>
+            <h3>Cadastre a chave de IA para começar</h3>
+            <p class="mute body-sm">O diagnóstico é escrito por IA com a sua conta da Anthropic (Claude) ou da OpenAI (ChatGPT). Sem uma chave cadastrada, o sistema não faz análises.</p>
+            <a class="btn shiny-cta" href="/ia" data-nav="ai"><span class="shiny-dots" aria-hidden="true"></span><span class="shiny-cta-content"><i class="ph ph-key"></i>Cadastrar chave de IA</span></a>
+          </div>
+        </div>
         <form id="form" class="analyze-form premium-card" novalidate>
           <label class="field">
             <span class="field-label">Seu site ou landing page</span>
@@ -106,6 +115,7 @@
             <span class="caption">Leva de 20 a 90 segundos por site.</span>
           </div>
           <p id="form-error" class="form-error" role="alert" hidden></p>
+          <p id="ai-status" class="caption ai-status" hidden></p>
         </form>
       </div>
 
@@ -163,6 +173,23 @@
             <p id="user-error" class="form-error" role="alert" hidden></p>
           </div>
         </form>
+      </div>
+    </section>
+
+    <section id="aiconf" class="ds-app page" hidden>
+      <div class="page-head"><span class="eyebrow">Configuração</span><h1>Inteligência artificial</h1>
+        <p class="mute">O diagnóstico de cada análise é escrito por IA, com a sua conta da Anthropic (Claude) ou da OpenAI (ChatGPT). Sem uma chave cadastrada não é possível analisar. A chave fica cifrada no servidor e nunca aparece de novo na tela.</p></div>
+      <div class="ai-grid">
+        <div class="card ai-card" data-scope="user" style="margin:0"></div>
+        <div class="card ai-card" data-scope="team" style="margin:0"></div>
+      </div>
+      <div class="card ai-help" style="margin-top:16px">
+        <h3>Onde pegar a chave</h3>
+        <div class="ai-help-grid">
+          <div><b>Anthropic (Claude)</b><p class="caption">Entre em console.anthropic.com → Settings → API Keys → Create Key. A chave começa com <code>sk-ant-</code>. É preciso ter créditos na conta.</p></div>
+          <div><b>OpenAI (ChatGPT)</b><p class="caption">Entre em platform.openai.com → API keys → Create new secret key. A chave começa com <code>sk-</code>. A assinatura do ChatGPT não inclui a API: é preciso adicionar créditos em Billing.</p></div>
+          <div><b>Custo</b><p class="caption">Cada análise faz uma chamada à IA com os dados e 3 capturas de tela. O valor é cobrado na sua conta da Anthropic ou da OpenAI e costuma ficar em centavos de dólar por análise, conforme o modelo.</p></div>
+        </div>
       </div>
     </section>
 

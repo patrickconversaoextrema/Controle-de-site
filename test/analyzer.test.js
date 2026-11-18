@@ -1,6 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startFixtureServer } from './serve-fixtures.js';
+import { startFixtureServer } from './support/serve-fixtures.js';
 
 process.env.ALLOW_PRIVATE_URLS = '1';
 // Os testes de navegador são opcionais: use TEST_BROWSER=1 para incluí-los.

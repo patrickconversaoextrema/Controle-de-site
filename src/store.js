@@ -45,6 +45,10 @@ export function openStore(dir = process.env.DATA_DIR || path.resolve('data')) {
       user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS images (
       report_id TEXT NOT NULL REFERENCES reports (id) ON DELETE CASCADE,
       n         INTEGER NOT NULL,
@@ -59,6 +63,8 @@ export function openStore(dir = process.env.DATA_DIR || path.resolve('data')) {
   if (!cols.includes('created_by')) db.exec('ALTER TABLE reports ADD COLUMN created_by TEXT');
   if (!cols.includes('share_token')) db.exec('ALTER TABLE reports ADD COLUMN share_token TEXT');
   if (!cols.includes('niche')) db.exec('ALTER TABLE reports ADD COLUMN niche TEXT');
+  const ucols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!ucols.includes('ai_config')) db.exec('ALTER TABLE users ADD COLUMN ai_config TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS reports_share ON reports (share_token) WHERE share_token IS NOT NULL');
 
   const insertReport = db.prepare(
@@ -193,6 +199,28 @@ export function openStore(dir = process.env.DATA_DIR || path.resolve('data')) {
     },
     purgeExpiredSessions() {
       db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString());
+    },
+
+    // ---------- Configurações ----------
+    getSetting(key) {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+      return row ? JSON.parse(row.value) : null;
+    },
+    setSetting(key, value) {
+      if (value == null) db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+      else db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value));
+    },
+    /** Configuração de IA da pessoa (com a chave cifrada) ou null. */
+    getUserAi(userId) {
+      const row = db.prepare('SELECT ai_config FROM users WHERE id = ?').get(userId);
+      return row?.ai_config ? JSON.parse(row.ai_config) : null;
+    },
+    setUserAi(userId, cfg) {
+      db.prepare('UPDATE users SET ai_config = ? WHERE id = ?').run(cfg ? JSON.stringify(cfg) : null, userId);
+    },
+    /** Atualiza o resultado salvo (ex.: diagnóstico da IA refeito). */
+    updateResult(id, result) {
+      return db.prepare('UPDATE reports SET result = ? WHERE id = ?').run(JSON.stringify(result), id).changes > 0;
     },
 
     close() {

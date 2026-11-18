@@ -94,11 +94,11 @@ async function api(path, { method = 'GET', body } = {}) {
     showLogin(data);
     throw new Error(data?.error || 'Faça login para continuar.');
   }
-  if (!res.ok) throw new Error(data?.error || 'Algo deu errado. Tente novamente.');
+  if (!res.ok) throw Object.assign(new Error(data?.error || 'Algo deu errado. Tente novamente.'), { data });
   return data;
 }
 
-const VIEWS = ['login', 'start', 'progress', 'report', 'team', 'account'];
+const VIEWS = ['login', 'start', 'progress', 'report', 'team', 'account', 'aiconf'];
 function show(view) {
   for (const v of VIEWS) $(`#${v}`).hidden = v !== view;
   $('#nav-app').hidden = view === 'login' || PUBLIC;
@@ -131,6 +131,7 @@ async function route() {
   if (m) return loadReport(m[1]);
   if (path === '/equipe') return ME.role === 'admin' ? showTeam() : go('/');
   if (path === '/conta') return showAccount();
+  if (path === '/ia') return showAiConfig();
   if (path === '/login') return go('/');
   showStart();
   if (location.hash === '#historico' || path === '/#historico') $('#historico').scrollIntoView();
@@ -199,11 +200,20 @@ $('#logout').addEventListener('click', async () => {
 
 let SEARCH_ON = true;
 async function loadConfig() {
+  let cfg;
   try {
-    SEARCH_ON = Boolean((await api('/api/config')).search);
+    cfg = await api('/api/config');
+    SEARCH_ON = Boolean(cfg.search);
   } catch {
     return;
   }
+  // Sem chave de IA o sistema não analisa: troca o formulário pelo aviso
+  const aiOk = Boolean(cfg.ai?.configured);
+  $('#ai-required').hidden = aiOk;
+  $('#form').hidden = !aiOk;
+  const st = $('#ai-status');
+  st.hidden = !aiOk;
+  if (aiOk) st.innerHTML = `<i class="ph ph-sparkle"></i>Diagnóstico por ${esc(cfg.ai.providerLabel)} · ${esc(cfg.ai.model)} (${cfg.ai.source === 'user' ? 'sua chave' : 'chave da equipe'}) · <a href="/ia" data-nav="ai">alterar</a>`;
   $('#search-off').hidden = SEARCH_ON;
   $('#niche').closest('.field').hidden = !SEARCH_ON;
   if (!SEARCH_ON) $('#manual-competitors').open = true;
@@ -291,6 +301,10 @@ form.addEventListener('submit', async (e) => {
     showProgress(competitors.length ? 1 + competitors.length : 4, !competitors.length);
     poll(data.id);
   } catch (ex) {
+    if (ex.data?.code === 'ai_required') {
+      toast('Cadastre uma chave de IA para analisar');
+      return go('/ia');
+    }
     err.textContent = ex.message;
     err.hidden = false;
   }
@@ -461,6 +475,127 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// ---------- Inteligência artificial ----------
+async function showAiConfig() {
+  show('aiconf');
+  document.title = 'Inteligência artificial · Raio-X do Site';
+  let info;
+  try {
+    info = await api('/api/ai');
+  } catch (ex) {
+    $$('.ai-card').forEach((c) => (c.innerHTML = `<div class="empty">${esc(ex.message)}</div>`));
+    return;
+  }
+  for (const card of $$('.ai-card')) renderAiCard(card, card.dataset.scope, info);
+}
+
+function renderAiCard(card, scope, info) {
+  const cur = info[scope];
+  const canEdit = scope === 'user' || info.canEditTeam;
+  const active = info.active === scope;
+  const provider = cur?.provider || 'anthropic';
+  const title = scope === 'user' ? 'Sua chave' : 'Chave da equipe';
+  const sub = scope === 'user'
+    ? 'Usada nas suas análises. Se você não cadastrar, usamos a chave da equipe.'
+    : 'Usada por quem não cadastrou a própria chave. Só administradores alteram.';
+  const warnEmpty = scope === 'user' && !info.active;
+  const status = cur
+    ? `<div class="ai-current">
+        ${active ? '<span class="badge badge-success"><i class="ph ph-check"></i>Em uso nas suas análises</span>' : '<span class="badge badge-neutral">Cadastrada</span>'}
+        <div><b>${esc(cur.providerLabel)}</b> · <span class="mono">${esc(cur.model)}</span> · <span class="mono">${esc(cur.keyMask)}</span></div>
+        <span class="caption">Atualizada em ${dateBR(cur.updatedAt, true)}${cur.updatedBy ? ` por ${esc(cur.updatedBy)}` : ''}</span>
+      </div>`
+    : `<div class="ai-current"><span class="badge ${warnEmpty ? 'badge-warning' : 'badge-neutral'}"><i class="ph ph-${warnEmpty ? 'warning' : 'info'}"></i>Nenhuma chave cadastrada</span></div>`;
+  const form = canEdit
+    ? `<form class="ai-form form-stack" novalidate>
+        <div class="field"><span class="field-label">Provedor</span>
+          <div class="segmented" role="radiogroup" aria-label="Provedor de IA">
+            ${Object.entries(info.providers).map(([k, v]) => `<button type="button" role="radio" data-provider="${k}" aria-checked="${k === provider}">${esc(v.label)}</button>`).join('')}
+          </div>
+        </div>
+        <label class="field"><span class="field-label">Chave de API</span>
+          <input name="apiKey" class="input input-plain mono" type="password" autocomplete="off" spellcheck="false" placeholder="${cur ? 'Deixe em branco para manter a chave atual' : esc(info.providers[provider].keyHint)}">
+        </label>
+        <label class="field"><span class="field-label">Modelo</span>
+          <span class="row-input">
+            <select name="model" class="input input-plain select">${cur ? `<option value="${esc(cur.model)}">${esc(cur.model)}</option>` : '<option value="">Teste a chave para listar os modelos</option>'}</select>
+            <button class="btn btn-sm btn-ghost" type="button" data-ai="test"><i class="ph ph-plugs-connected"></i>Testar chave</button>
+          </span>
+        </label>
+        <div class="row-input">
+          <button class="btn shiny-cta" type="submit"><span class="shiny-dots" aria-hidden="true"></span><span class="shiny-cta-content"><i class="ph ph-floppy-disk"></i>Salvar</span></button>
+          ${cur ? '<button class="btn btn-sm btn-danger-ghost" type="button" data-ai="drop"><i class="ph ph-trash"></i>Remover chave</button>' : ''}
+        </div>
+        <p class="ai-msg caption" role="status" hidden></p>
+      </form>`
+    : '<p class="caption">Peça a um administrador para cadastrar ou trocar a chave da equipe.</p>';
+  card.innerHTML = `<div class="card-title" style="margin-bottom:8px"><h3 style="margin:0"><i class="ph ph-key"></i> ${title}</h3></div><p class="caption" style="margin:0 0 14px">${sub}</p>${status}${form}`;
+  if (!canEdit) return;
+
+  const f = $('.ai-form', card);
+  let prov = provider;
+  const msg = (text, kind = '') => {
+    const m = $('.ai-msg', f);
+    m.hidden = !text;
+    m.className = `ai-msg caption ${kind}`;
+    m.textContent = text || '';
+  };
+  $$('[data-provider]', f).forEach((b) =>
+    b.addEventListener('click', () => {
+      prov = b.dataset.provider;
+      $$('[data-provider]', f).forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+      const keep = cur && cur.provider === prov;
+      f.apiKey.placeholder = keep ? 'Deixe em branco para manter a chave atual' : info.providers[prov].keyHint;
+      f.model.innerHTML = keep ? `<option value="${esc(cur.model)}">${esc(cur.model)}</option>` : '<option value="">Teste a chave para listar os modelos</option>';
+      msg('');
+    }),
+  );
+  const busy = (btn, on) => {
+    btn.disabled = on;
+    btn.classList.toggle('is-busy', on);
+  };
+  $('[data-ai="test"]', f).addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    busy(btn, true);
+    msg('Testando a chave…');
+    try {
+      const { models, defaultModel } = await api('/api/ai/test', { method: 'POST', body: { scope, provider: prov, apiKey: f.apiKey.value.trim() } });
+      const keep = f.model.value;
+      f.model.innerHTML = models.map((m) => `<option value="${esc(m)}">${esc(m)}${m === defaultModel ? ' (recomendado)' : ''}</option>`).join('');
+      f.model.value = models.includes(keep) ? keep : defaultModel;
+      msg(`Chave válida. ${models.length} modelo(s) disponível(is) nesta conta.`, 'ok');
+    } catch (ex) {
+      msg(ex.message, 'err');
+    } finally {
+      busy(btn, false);
+    }
+  });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('button[type=submit]', f);
+    busy(btn, true);
+    msg('Validando e salvando…');
+    try {
+      await api('/api/ai', { method: 'PUT', body: { scope, provider: prov, apiKey: f.apiKey.value.trim(), model: f.model.value } });
+      toast('Chave de IA salva');
+      showAiConfig();
+    } catch (ex) {
+      msg(ex.message, 'err');
+      busy(btn, false);
+    }
+  });
+  $('[data-ai="drop"]', f)?.addEventListener('click', async () => {
+    if (!confirm(scope === 'team' ? 'Remover a chave da equipe? Quem não tiver chave própria não poderá analisar.' : 'Remover a sua chave?')) return;
+    try {
+      await api(`/api/ai?scope=${scope}`, { method: 'DELETE' });
+      toast('Chave removida');
+      showAiConfig();
+    } catch (ex) {
+      msg(ex.message, 'err');
+    }
+  });
+}
+
 // ---------- Minha conta ----------
 function showAccount() {
   show('account');
@@ -504,7 +639,9 @@ function renderReport(data) {
   const previous = idx > 0 ? hist[idx - 1] : null;
   const competitorsCount = comparison ? comparison.sites.length - 1 : 0;
 
+  const showAi = Boolean(data.ai || data.aiError || !data.public);
   const sections = [
+    showAi ? { id: 'ia', label: 'Diagnóstico IA', icon: 'sparkle', html: aiSection(data) } : null,
     { id: 'geral', label: 'Visão geral', icon: 'squares-four', html: overviewSection(main, categories, previous, comparison, data.discovery) },
     { id: 'plano', label: 'Plano de ação', icon: 'list-checks', count: main.actionPlan.total, html: planSection(main) },
     comparison || data.discovery
@@ -524,6 +661,61 @@ function renderReport(data) {
   wire(el, comparison, hist, data);
   loadFontPreviews(main);
   window.scrollTo({ top: 0 });
+}
+
+const IMPACT_BADGE = { alto: 'badge-danger', medio: 'badge-warning', baixo: 'badge-neutral' };
+const IMPACT_TEXT = { alto: 'Impacto alto', medio: 'Impacto médio', baixo: 'Impacto baixo' };
+
+function copyList(title, icon, items) {
+  if (!items?.length) return '';
+  return `<div class="ai-copy-col"><h4><i class="ph ph-${icon}"></i>${title}</h4>${items
+    .map((t) => `<div class="ai-copy-item"><span>${esc(t)}</span><button class="btn btn-ghost btn-sm btn-icon" data-copy="${esc(t)}" title="Copiar" aria-label="Copiar"><i class="ph ph-copy"></i></button></div>`)
+    .join('')}</div>`;
+}
+
+// Aba "Diagnóstico IA": texto escrito pela IA a partir dos dados e das capturas
+function aiSection(data) {
+  const regen = (label) =>
+    data.public ? '' : `<button class="btn btn-sm btn-secondary" data-action="ai-regenerate"><i class="ph ph-arrow-clockwise"></i><span>${label}</span></button>`;
+  if (!data.ai) {
+    const why = data.aiError
+      ? `<div class="error-box"><i class="ph ph-warning"></i>O diagnóstico por IA não foi gerado: ${esc(data.aiError)}</div>`
+      : '<p class="mute">Este relatório foi feito antes do diagnóstico por IA.</p>';
+    return `<section class="card">${why}<div class="row-input" style="margin-top:12px">${regen('Gerar diagnóstico agora')}<a class="btn btn-sm btn-ghost" href="/ia" data-nav="ai"><i class="ph ph-key"></i>Configurar chave de IA</a></div></section>`;
+  }
+  const a = data.ai;
+  const label = a.provider === 'openai' ? 'OpenAI' : 'Anthropic';
+  return `<section class="card ai-summary">
+      <div class="ai-summary-head"><span class="eyebrow"><i class="ph ph-sparkle"></i> Diagnóstico</span>${regen('Gerar de novo')}</div>
+      <p class="ai-resumo">${esc(a.resumo)}</p>
+      ${a.pontos_fortes?.length ? `<div class="chips">${a.pontos_fortes.map((p) => `<span class="badge badge-success"><i class="ph ph-check"></i>${esc(p)}</span>`).join('')}</div>` : ''}
+    </section>
+    <section class="card">
+      <div class="card-title"><h2>O que fazer primeiro</h2><span class="caption">${a.prioridades.length} prioridades em ordem de importância</span></div>
+      <div class="acc-list">${a.prioridades
+        .map((p, i) => `<details class="acc acc-num"${i === 0 ? ' open' : ''}>
+          <summary><span class="acc-status"><span class="prio-n">${i + 1}</span></span><span class="acc-title">${esc(p.titulo)}</span><span class="acc-tags"><span class="badge ${IMPACT_BADGE[p.impacto] || 'badge-neutral'}">${IMPACT_TEXT[p.impacto] || ''}</span>${p.area ? `<span class="badge badge-neutral">${esc(p.area)}</span>` : ''}</span><i class="ph ph-caret-down acc-caret"></i></summary>
+          <div class="acc-body">${p.por_que ? `<p><b>Por quê:</b> ${esc(p.por_que)}</p>` : ''}${p.como_fazer ? `<p class="how"><b>Como fazer:</b> ${esc(p.como_fazer)}</p>` : ''}</div>
+        </details>`)
+        .join('')}</div>
+    </section>
+    <section class="card">
+      <div class="card-title"><h2>Sugestões de texto</h2><span class="caption">Prontas para usar. Clique para copiar.</span></div>
+      <div class="ai-copy">
+        ${copyList('Título principal', 'text-h-one', a.copy.headlines)}
+        ${copyList('Texto do botão', 'cursor-click', a.copy.ctas)}
+        ${copyList('No Google', 'google-logo', [a.copy.meta_title, a.copy.meta_description].filter(Boolean))}
+      </div>
+    </section>
+    <div class="ai-two">
+      ${a.visual ? `<section class="card"><h3><i class="ph ph-eye"></i> Visual e primeira impressão</h3><p class="ai-text">${esc(a.visual)}</p></section>` : ''}
+      ${a.concorrentes ? `<section class="card"><h3><i class="ph ph-flag-checkered"></i> Frente aos concorrentes</h3><p class="ai-text">${esc(a.concorrentes)}</p></section>` : ''}
+    </div>
+    ${a.plano_30_dias?.length ? `<section class="card">
+      <div class="card-title"><h2>Plano de 30 dias</h2></div>
+      <div class="ai-plan">${a.plano_30_dias.map((w) => `<div class="ai-week"><span class="eyebrow">${esc(w.semana)}</span><ul>${w.acoes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}</div>
+    </section>` : ''}
+    <p class="caption ai-foot">Escrito por IA (${label} · ${esc(a.model)}) em ${dateBR(a.generatedAt, true)} a partir dos dados medidos nesta análise. Revise antes de aplicar.</p>`;
 }
 
 function gauge(score, size = 104) {
@@ -924,6 +1116,34 @@ function wire(root, cmp, hist, data) {
       selectTab('main', 'detalhes');
       selectTab('cat', b.dataset.goto);
       scrollToTabs();
+    }),
+  );
+  $$('[data-copy]', root).forEach((b) =>
+    b.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(b.dataset.copy);
+        toast('Texto copiado');
+      } catch {
+        prompt('Copie o texto:', b.dataset.copy);
+      }
+    }),
+  );
+  $$('[data-action="ai-regenerate"]', root).forEach((b) =>
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      b.classList.add('is-busy');
+      $('span', b).textContent = 'Gerando… (até 1 minuto)';
+      try {
+        await api(`/api/reports/${currentId}/ai`, { method: 'POST' });
+        toast('Diagnóstico atualizado');
+        await loadReport(currentId);
+      } catch (ex) {
+        if (ex.data?.code === 'ai_required') return go('/ia');
+        toast(ex.message);
+        b.disabled = false;
+        b.classList.remove('is-busy');
+        $('span', b).textContent = 'Tentar de novo';
+      }
     }),
   );
   $$('[data-action="toggle-all"]', root).forEach((b) =>

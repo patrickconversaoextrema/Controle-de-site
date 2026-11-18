@@ -12,6 +12,20 @@ Informe o endereço do site e o **nicho** (ex.: "clínica odontológica em Campi
 
 A arquitetura deixa a porta aberta: a API (`POST /api/analyze`) pode ser usada depois por uma extensão ou plugin que só exibe o relatório.
 
+## Diagnóstico por IA (obrigatório)
+
+Cada análise termina com um diagnóstico escrito por IA — **Anthropic (Claude)** ou **OpenAI (ChatGPT)** — usando a chave de API da própria pessoa ou da equipe. **Sem chave cadastrada o sistema não faz análises**: o formulário é trocado por um aviso que leva à página **Inteligência artificial**.
+
+- **Onde cadastrar**: menu da conta → **Inteligência artificial**.
+  - *Sua chave*: usada só nas suas análises.
+  - *Chave da equipe* (só administradores alteram): usada por quem não cadastrou a própria. A chave pessoal tem prioridade.
+- **Ao salvar**, a chave é testada na hora e a lista de modelos da conta aparece para escolha (recomendado: `claude-sonnet-5-5` na Anthropic; o GPT mais recente na OpenAI).
+- **Segurança**: a chave é cifrada (AES-256-GCM) antes de ir para o banco, nunca volta para o navegador (a tela mostra só `sk-ant-…1234`) e só é usada no servidor. A chave-mestra vem de `SECRET_KEY` ou de `DATA_DIR/.secret-key`, criada na primeira execução. Não troque a `SECRET_KEY` depois de cadastrar chaves.
+- **O que a IA recebe**: as notas, os problemas encontrados, métricas, textos da página (título, subtítulos, botões, trecho do conteúdo), a busca no Google, os dados dos concorrentes e 3 capturas da primeira tela (cliente no computador e no celular, e o concorrente mais bem avaliado). O texto dos sites é tratado como dado, não como instrução.
+- **O que ela devolve** (aba **Diagnóstico IA**, a primeira do relatório): resumo, pontos fortes, 5 a 7 prioridades com por quê e como fazer, sugestões de título, botões, title e meta description prontas para copiar, avaliação visual, comparação com os concorrentes e um plano de 30 dias.
+- **Se a IA falhar** (chave sem créditos, instabilidade), o relatório é salvo mesmo assim e mostra o motivo, com o botão **Gerar diagnóstico agora**. O mesmo botão (**Gerar de novo**) refaz o diagnóstico a qualquer momento.
+- **Custo**: uma chamada por análise, cobrada na conta da Anthropic/OpenAI de quem cadastrou a chave.
+
 ## Concorrentes automáticos pelo nicho
 
 1. O site do cliente é analisado primeiro.
@@ -38,7 +52,9 @@ O repositório já traz o `render.yaml` (Blueprint) e o `Dockerfile` com o Chrom
    - `SERPER_API_KEY` — chave do [serper.dev](https://serper.dev) para encontrar os concorrentes pelo nicho (crie a conta, copie a "API Key").
    - `PAGESPEED_API_KEY` — opcional, chave gratuita do Google PageSpeed.
 4. Confirme. O primeiro deploy leva alguns minutos (instala o Chromium). No fim aparece o endereço `https://raio-x-do-site.onrender.com` (ou parecido).
-5. Abra o endereço, entre com o e-mail/senha do passo 3 e cadastre a equipe em **Equipe**.
+5. Abra o endereço, entre com o e-mail/senha do passo 3.
+6. No menu da conta, abra **Inteligência artificial** e cadastre a chave da Anthropic ou da OpenAI (sem ela o sistema não analisa).
+7. Cadastre a equipe em **Equipe**.
 
 Custos e limites: o plano `starter` (≈ US$ 7/mês) + disco de 1 GB (≈ US$ 0,25/mês) guarda os relatórios. Ele roda uma análise por vez (`LOW_MEMORY=1`, `MAX_CONCURRENT_JOBS=1`). Se análises de sites pesados falharem por falta de memória, troque o plano para `standard` e, se quiser mais velocidade, remova `LOW_MEMORY` e aumente `MAX_CONCURRENT_JOBS` para 2. `ADMIN_EMAIL`/`ADMIN_PASSWORD` só são usados quando o banco ainda não tem nenhum usuário.
 
@@ -132,6 +148,8 @@ Os testes sobem duas landing pages de exemplo (`test/fixtures/ruim.html` e `boa.
 server.js                    API (fila de análises, relatórios salvos) + arquivos estáticos
 src/store.js                 Banco SQLite: relatórios, imagens, histórico, usuários, sessões
 src/auth.js                  Senhas (scrypt), cookies de sessão, limite de tentativas
+src/ai.js                    Diagnóstico por IA (Anthropic/OpenAI): prompt, chamada, validação da resposta
+src/secrets.js               Cifragem das chaves de API guardadas
 render.yaml                  Blueprint para publicar no Render
 scripts/build-demo.mjs       Gera a demonstração estática
 public/                      Interface (HTML/CSS/JS puro)
@@ -154,6 +172,8 @@ POST /api/analyze   { "url": "https://site.com", "niche": "clínica odontológic
 GET  /api/config    → { search: "serper" | "brave" | null }
 GET  /api/jobs/:id  → { status: queued|running|done|error, progress, result }
 POST /api/login · POST /api/logout · GET /api/me · POST /api/me/password
+GET /api/ai · POST /api/ai/test · PUT /api/ai · DELETE /api/ai?scope=user|team   (chave de IA)
+POST /api/reports/:id/ai                                → refaz o diagnóstico por IA
 GET/POST /api/users · PATCH/DELETE /api/users/:id      (administrador)
 POST/DELETE /api/reports/:id/share                      → cria/desativa o link do cliente
 GET  /api/public/:token                                 → relatório pelo link do cliente (sem login)

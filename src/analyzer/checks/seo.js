@@ -146,6 +146,6 @@ export function seoChecks(ctx) {
   return {
     checks: out,
     metrics: { titleLength: title.length, descriptionLength: desc.length, h1Count: h1s.length, words, hasStructuredData: types.length > 0 },
-    extra: { title, description: desc, h1: h1s[0] || null, headings: $('h1,h2,h3').slice(0, 30).map((_, el) => ({ level: el.tagName.toLowerCase(), text: $(el).text().trim().replace(/\s+/g, ' ').slice(0, 100) })).get() },
+    extra: { title, description: desc, h1: h1s[0] || null, textExcerpt: text.slice(0, 4000), headings: $('h1,h2,h3').slice(0, 30).map((_, el) => ({ level: el.tagName.toLowerCase(), text: $(el).text().trim().replace(/\s+/g, ' ').slice(0, 100) })).get() },
   };
 }

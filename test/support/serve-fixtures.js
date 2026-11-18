@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.webp': 'image/webp' };
 
 export function startFixtureServer(port = 0, host = '127.0.0.1') {
